@@ -223,7 +223,7 @@ def plot_iteration(field, structure, W, H, foms, fname='', layout='auto',
 
     if(show_now):
         plt.tight_layout()
-        plt.show()
+        plt.show(block=False)
 
 
 def save_results(fname, data, additional=None):

@@ -4,6 +4,7 @@ from emopt.adjoint_method import AdjointMethod, AdjointMethodMO
 
 import numpy as np
 from math import pi
+import copy
 
 from petsc4py import PETSc
 from mpi4py import MPI
@@ -13,44 +14,30 @@ from mpi4py import MPI
 ####################################################################################
 class IncoherentCombinerAdjointMethod(AdjointMethod):
 
-    def __init__(self, sim, spacer, waveguide, lower, hole, fom_domain, mode_match):
+    def __init__(self, sim, spacer, waveguide, lower, indices, xs, ys, ZminD,
+                 ZmaxD, fom_domain, mode_match):
         super(IncoherentCombinerAdjointMethod, self).__init__(sim, step=1e-5)
         self.spacer = spacer
         self.waveguide = waveguide
         self.lower = lower
-        self.hole = hole
+        self.indices = indices
+        self.xs = xs
+        self.ys = ys
         self.mode_match = mode_match
         self.fom_domain = fom_domain
+        self.ZminD = ZminD
+        self.ZmaxD = ZmaxD
 
     def update_system(self, params):
         # params = [position1, position2, Hole_x, Hole_y, Hole_length, Hole_height]
 
+        N = len(params)/2;
 
-        self.spacer.set_point(2, params[1], self.spacer._ys[2])
-        self.spacer.set_point(5, params[1], self.spacer._ys[5])
-        self.spacer.set_point(10, params[0], self.spacer._ys[10])
+        for i in range(len(self.indices)):
+            self.spacer.set_point(self.indices[i], params[i], params[i+N])
+            self.waveguide.set_point(self.indices[i], params[i], params[i+N])
+            self.lower.set_point(self.indices[i], params[i], params[i+N])
 
-        self.waveguide.set_point(2, params[1], self.waveguide._ys[2])
-        self.waveguide.set_point(5, params[1], self.waveguide._ys[5])
-        self.waveguide.set_point(10, params[0], self.waveguide._ys[10])
-
-        self.lower.set_point(2, params[1], self.lower._ys[2])
-        self.lower.set_point(5, params[1], self.lower._ys[5])
-        self.lower.set_point(10, params[0], self.lower._ys[10])
-
-        self.hole.x0 = params[2]
-        self.hole.y0 = params[3]
-        self.hole.width = params[4]
-        self.hole.height = params[5]
-
-
-        #x_pts = np.array([0, endIn, position2, X, X, position2, endIn, 0,
-        #         0, endIn, position1, endIn, 0])
-
-        #y_pts = np.array([wg_spacing/2+w_wg, wg_spacing/2+w_wg, w_wg_out/2, w_wg_out/2,
-        #         -w_wg_out/2, -w_wg_out/2, -wg_spacing/2-w_wg,
-        #          -wg_spacing/2-w_wg, -wg_spacing/2, -wg_spacing/2, 0,
-        #          wg_spacing/2, wg_spacing/2]) + Y/2
 
     @run_on_master
     def calc_fom(self, sim, params):
@@ -89,6 +76,39 @@ class IncoherentCombinerAdjointMethod(AdjointMethod):
         """ Our FOM does not depend explicitly on deisgn parameters """
         return np.zeros(len(params))
 
+    def get_update_boxes(self, sim, params):
+        x = self.waveguide.xs
+        y = self.waveguide.ys
+
+        dx = sim.dx
+        dy = sim.dy
+        dz = sim.dz
+
+        ids = self.indices
+        N = len(ids)
+
+        update_boxes = []
+        for i in range(N):
+            if(i<N-1):
+                xmin = np.min([x[ids[i]-1], x[ids[i]], x[ids[i]+1]])-2*dx
+                xmax = np.max([x[ids[i]-1], x[ids[i]], x[ids[i]+1]])+2*dx
+                ymin = np.min([y[ids[i]-1], y[ids[i]], y[ids[i]+1]])-2*dy
+                ymax = np.max([y[ids[i]-1], y[ids[i]], y[ids[i]+1]])+2*dy
+                ubs = [xmin, xmax, ymin, ymax, self.ZminD-2*dz, self.ZmaxD+2*dz]
+            else:
+                xmin = np.min([x[ids[i]-1], x[ids[i]], x[0]])-2*dx
+                xmax = np.max([x[ids[i]-1], x[ids[i]], x[0]])+2*dx
+                ymin = np.min([y[ids[i]-1], y[ids[i]], y[0]])-2*dy
+                ymax = np.max([y[ids[i]-1], y[ids[i]], y[0]])+2*dy
+                ubs = [xmin, xmax, ymin, ymax, self.ZminD-2*dz, self.ZmaxD+2*dz]
+
+            update_boxes.append(ubs)
+
+        update_boxes_initial = copy.deepcopy(update_boxes)
+        for u in update_boxes_initial:
+            update_boxes.append(u) # accounts for y params
+
+        return update_boxes
 
 ###################################################################################
 # Multi-objective class
@@ -197,7 +217,7 @@ y_pts = []
 
 #Fixed points
 x_pts.append(np.array([endIn, 0, 0, endIn]))
-x_pts.append(np.array([position2, X, X, position2,]))
+x_pts.append(np.array([position2, X, X, position2]))
 x_pts.append(np.array([endIn, 0 , 0, endIn]))
 
 y_pts.append(np.array([wg_spacing/2, wg_spacing/2, wg_spacing/2+w_wg,
@@ -209,8 +229,9 @@ y_pts.append(np.array([-wg_spacing/2-w_wg, -wg_spacing/2-w_wg, -wg_spacing/2,
 
 # Create changeable points (parameters)
 
+indices = [];
 
-ds = dx/2
+ds = 2*dx
 
 x_p = []
 y_p = []
@@ -218,6 +239,8 @@ y_p = []
 for i in range(len(x_pts)-1):
     xf, yf = emopt.grid.Polygon.populate_lines([x_pts[i][-1],x_pts[i+1][0]],
                                                [y_pts[i][-1],y_pts[i+1][0]], ds)
+
+    indices.append(xf.size-3)
     x_p.append(xf[1:-2])
     y_p.append(yf[1:-2])
 
@@ -228,13 +251,23 @@ for i in range(len(x_pts)-1):
 xf, yf = emopt.grid.Polygon.populate_lines([endIn, position1, endIn],
                                            [Y/2-wg_spacing/2, Y/2,
                                             Y/2+wg_spacing/2], ds)
-
+indices.append(xf.size-3)
 xs = np.concatenate((xs, x_pts[-1], xf[1:-2]))
 ys = np.concatenate((ys, y_pts[-1], yf[1:-2]))
 
 x_p.append(xf[1:-2])
 y_p.append(yf[1:-2])
+print indices
+print len(x_p[0]), len(x_p[1]), len(x_p[2])
 
+indices2 = np.array([], dtype='int32')
+indices2=np.concatenate((indices2, x_pts[0].size +
+                         np.array(range(indices[0]))))
+indices2=np.concatenate((indices2, indices2.size + x_pts[0].size + x_pts[1].size +
+                         np.array(range(indices[1]))))
+indices2=np.concatenate((indices2, indices2.size + x_pts[0].size +
+                         x_pts[1].size + x_pts[2].size +
+                         np.array(range(indices[2]))))
 
 
 spacer = emopt.grid.Polygon()
@@ -280,6 +313,10 @@ eps.add_primitive(lower, Z/2-h_waveguide/2-h_lowerRidge, Z/2-h_waveguide/2)
 eps.add_primitive(bg_substrate, 0, Z/2-h_waveguide/2-h_lowerRidge)
 eps.add_primitive(bg_air, Z/2-h_waveguide/2-h_lowerRidge, Z)
 
+ZminD = Z/2-h_waveguide/2-h_lowerRidge
+ZmaxD = Z/2+h_waveguide/2
+
+
 
 mu = emopt.grid.ConstantMaterial3D(1.0)
 
@@ -297,10 +334,10 @@ sim2.build()
 ###############################################################################
 input_slice = emopt.misc.DomainCoordinates(18*dx, 18*dx, w_pml, Y-w_pml, w_pml, Z-w_pml, dx, dy, dz)
 
-slices= emopt.grid.DomainCoordinates(X/2, X/2, w_pml, Y-w_pml, w_pml, Z-w_pml,
-                                    dx, dy, dz)
-slices2 = emopt.grid.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml,
-                                       Y-w_pml, w_pml, Z-w_pml, dx, dy, dz)
+#slices= emopt.grid.DomainCoordinates(X/2, X/2, w_pml, Y-w_pml, w_pml, Z-w_pml,
+#                                    dx, dy, dz)
+#slices2 = emopt.grid.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml,
+#                                       Y-w_pml, w_pml, Z-w_pml, dx, dy, dz)
 slices3 =emopt.grid.DomainCoordinates(0, X, 0, Y, Z/2, Z/2, dx, dy, dz)
 
 
@@ -329,10 +366,6 @@ if(NOT_PARALLEL):
               cmap='inferno')
     f2.colorbar(pos, ax=ax)
     plt.show()
-
-if(NOT_PARALLEL):
-    import matplotlib.pyplot as plt
-    f = plt.figure()
 
 
 for i in range(4):
@@ -405,64 +438,64 @@ sim2.set_sources(src2, input_slice)
 ###############################################################################
 # Mode match for optimization
 ###############################################################################
-fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml, w_pml, Z-w_pml, dx, dy, dz)
-
-fom_mode = emopt.modes.ModeFullVector(wavelength, eps, mu, fom_slice, n0=3.45, neigs=6)
-
-fom_mode.bc = '00'
-fom_mode.build()
-fom_mode.solve()
-
-
-
-Exm0 = fom_mode.get_field_interp(0, 'Ex')
-Eym0 = fom_mode.get_field_interp(0, 'Ey')
-Ezm0 = fom_mode.get_field_interp(0, 'Ez')
-Hxm0 = fom_mode.get_field_interp(0, 'Hx')
-Hym0 = fom_mode.get_field_interp(0, 'Hy')
-Hzm0 = fom_mode.get_field_interp(0, 'Hz')
-
-Exm1 = fom_mode.get_field_interp(1, 'Ex')
-Eym1 = fom_mode.get_field_interp(1, 'Ey')
-Ezm1 = fom_mode.get_field_interp(1, 'Ez')
-Hxm1 = fom_mode.get_field_interp(1, 'Hx')
-Hym1 = fom_mode.get_field_interp(1, 'Hy')
-Hzm1 = fom_mode.get_field_interp(1, 'Hz')
-
-
-if(NOT_PARALLEL):
-    Nz, Ny = Exm0.shape
-    Exm0 = np.reshape(Exm0, (Nz, Ny, 1))
-    Eym0 = np.reshape(Eym0, (Nz, Ny, 1))
-    Ezm0 = np.reshape(Ezm0, (Nz, Ny, 1))
-    Hxm0 = np.reshape(Hxm0, (Nz, Ny, 1))
-    Hym0 = np.reshape(Hym0, (Nz, Ny, 1))
-    Hzm0 = np.reshape(Hzm0, (Nz, Ny, 1))
-    Exm1 = np.reshape(Exm1, (Nz, Ny, 1))
-    Eym1 = np.reshape(Eym1, (Nz, Ny, 1))
-    Ezm1 = np.reshape(Ezm1, (Nz, Ny, 1))
-    Hxm1 = np.reshape(Hxm1, (Nz, Ny, 1))
-    Hym1 = np.reshape(Hym1, (Nz, Ny, 1))
-    Hzm1 = np.reshape(Hzm1, (Nz, Ny, 1))
-
-
-
-Ex_1 = sim1.get_field_interp('Ex', domain=fom_slice)
-Ey_1 = sim1.get_field_interp('Ey', domain=fom_slice)
-Ez_1 = sim1.get_field_interp('Ez', domain=fom_slice)
-Hx_1 = sim1.get_field_interp('Hx', domain=fom_slice)
-Hy_1 = sim1.get_field_interp('Hy', domain=fom_slice)
-Hz_1 = sim1.get_field_interp('Hz', domain=fom_slice)
-
-
-
-Ex_2 = sim2.get_field_interp('Ex', domain=fom_slice)
-Ey_2 = sim2.get_field_interp('Ey', domain=fom_slice)
-Ez_2 = sim2.get_field_interp('Ez', domain=fom_slice)
-Hx_2 = sim2.get_field_interp('Hx', domain=fom_slice)
-Hy_2 = sim2.get_field_interp('Hy', domain=fom_slice)
-Hz_2 = sim2.get_field_interp('Hz', domain=fom_slice)
-
+#fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml, w_pml, Z-w_pml, dx, dy, dz)
+#
+#fom_mode = emopt.modes.ModeFullVector(wavelength, eps, mu, fom_slice, n0=3.45, neigs=6)
+#
+#fom_mode.bc = '00'
+#fom_mode.build()
+#fom_mode.solve()
+#
+#
+#
+#Exm0 = fom_mode.get_field_interp(0, 'Ex')
+#Eym0 = fom_mode.get_field_interp(0, 'Ey')
+#Ezm0 = fom_mode.get_field_interp(0, 'Ez')
+#Hxm0 = fom_mode.get_field_interp(0, 'Hx')
+#Hym0 = fom_mode.get_field_interp(0, 'Hy')
+#Hzm0 = fom_mode.get_field_interp(0, 'Hz')
+#
+#Exm1 = fom_mode.get_field_interp(1, 'Ex')
+#Eym1 = fom_mode.get_field_interp(1, 'Ey')
+#Ezm1 = fom_mode.get_field_interp(1, 'Ez')
+#Hxm1 = fom_mode.get_field_interp(1, 'Hx')
+#Hym1 = fom_mode.get_field_interp(1, 'Hy')
+#Hzm1 = fom_mode.get_field_interp(1, 'Hz')
+#
+#
+#if(NOT_PARALLEL):
+#    Nz, Ny = Exm0.shape
+#    Exm0 = np.reshape(Exm0, (Nz, Ny, 1))
+#    Eym0 = np.reshape(Eym0, (Nz, Ny, 1))
+#    Ezm0 = np.reshape(Ezm0, (Nz, Ny, 1))
+#    Hxm0 = np.reshape(Hxm0, (Nz, Ny, 1))
+#    Hym0 = np.reshape(Hym0, (Nz, Ny, 1))
+#    Hzm0 = np.reshape(Hzm0, (Nz, Ny, 1))
+#    Exm1 = np.reshape(Exm1, (Nz, Ny, 1))
+#    Eym1 = np.reshape(Eym1, (Nz, Ny, 1))
+#    Ezm1 = np.reshape(Ezm1, (Nz, Ny, 1))
+#    Hxm1 = np.reshape(Hxm1, (Nz, Ny, 1))
+#    Hym1 = np.reshape(Hym1, (Nz, Ny, 1))
+#    Hzm1 = np.reshape(Hzm1, (Nz, Ny, 1))
+#
+#
+#
+#Ex_1 = sim1.get_field_interp('Ex', domain=fom_slice)
+#Ey_1 = sim1.get_field_interp('Ey', domain=fom_slice)
+#Ez_1 = sim1.get_field_interp('Ez', domain=fom_slice)
+#Hx_1 = sim1.get_field_interp('Hx', domain=fom_slice)
+#Hy_1 = sim1.get_field_interp('Hy', domain=fom_slice)
+#Hz_1 = sim1.get_field_interp('Hz', domain=fom_slice)
+#
+#
+#
+#Ex_2 = sim2.get_field_interp('Ex', domain=fom_slice)
+#Ey_2 = sim2.get_field_interp('Ey', domain=fom_slice)
+#Ez_2 = sim2.get_field_interp('Ez', domain=fom_slice)
+#Hx_2 = sim2.get_field_interp('Hx', domain=fom_slice)
+#Hy_2 = sim2.get_field_interp('Hy', domain=fom_slice)
+#Hz_2 = sim2.get_field_interp('Hz', domain=fom_slice)
+#
 #if(NOT_PARALLEL):
 #    print Ex_1.shape
 #
@@ -619,11 +652,12 @@ mode_match2 = emopt.fomutils.ModeMatch([1,0,0], dy, dz, Exm1, Eym1, Ezm1, Hxm1,
 ###############################################################################
 
 sim1.field_domains = [fom_slice]
-am1 = IncoherentCombinerAdjointMethod(sim1, spacer, waveguide, lower, hole, fom_slice, mode_match1)
+am1 = IncoherentCombinerAdjointMethod(sim1, spacer, waveguide, lower, indices2,
+                                      xs, ys, ZminD, ZmaxD, fom_slice, mode_match1)
 
 sim2.field_domains = [fom_slice]
-am2 = IncoherentCombinerAdjointMethod(sim2, spacer, waveguide, lower, hole,
-                                      fom_slice, mode_match2)
+am2 = IncoherentCombinerAdjointMethod(sim2, spacer, waveguide, lower, indices2,
+                                      xs, ys, ZminD, ZmaxD, fom_slice, mode_match2)
 
 ams = []
 ams.append(am1)
@@ -631,20 +665,51 @@ ams.append(am2)
 
 am = MultiObjective(ams)
 
-for i in range(len(x_p)):
-
-    params = np.array([position1, position2, Hole_x, Hole_y, Hole_length,
-                   Hole_height])
+params = np.array(np.concatenate((xs[indices2],ys[indices2])))
 
 #am.check_gradient(params)
 
 ###############################################################################
 # Setup and run the simulation
 ###############################################################################
-opt = emopt.optimizer.Optimizer(am, params, Nmax=10, opt_method='L-BFGS-B')
+opt = emopt.optimizer.Optimizer(am, params, Nmax=5, opt_method='L-BFGS-B')
 fom, pfinal = opt.run()
 
 am.fom(pfinal)
+
+if(NOT_PARALLEL):
+    Ex111 = sim1.get_field_interp('Ex', domain=fom_slice)
+    Ey111 = sim1.get_field_interp('Ey', domain=fom_slice)
+    Ez111 = sim1.get_field_interp('Ez', domain=fom_slice)
+    Hx111 = sim1.get_field_interp('Hx', domain=fom_slice)
+    Hy111 = sim1.get_field_interp('Hy', domain=fom_slice)
+    Hz111 = sim1.get_field_interp('Hz', domain=fom_slice)
+
+    Psrc = sim1.source_power
+    mode_match1.compute(Ex111, Ey111, Ez111, Hx111, Hy111, Hz111)
+    fom1 = -1*mode_match1.get_mode_match_forward(1.0)
+    result111=fom1/Psrc
+
+    Ex222 = sim2.get_field_interp('Ex', domain=fom_slice)
+    Ey222 = sim2.get_field_interp('Ey', domain=fom_slice)
+    Ez222 = sim2.get_field_interp('Ez', domain=fom_slice)
+    Hx222 = sim2.get_field_interp('Hx', domain=fom_slice)
+    Hy222 = sim2.get_field_interp('Hy', domain=fom_slice)
+    Hz222 = sim2.get_field_interp('Hz', domain=fom_slice)
+
+    Psrc = sim2.source_power
+    mode_match2.compute(Ex222, Ey222, Ez222, Hx222, Hy222, Hz222)
+    fom2 = -1*mode_match2.get_mode_match_forward(1.0)
+    result222=fom2/Psrc
+
+    print result111
+    print result222
+
+
+
+
+
+
 
 field_monitor = emopt.misc.DomainCoordinates(w_pml, X-w_pml, w_pml, Y-w_pml, Z/2,
                                              Z/2, dx, dy, dz)
@@ -659,13 +724,18 @@ if(NOT_PARALLEL):
     eps_arr = eps.get_values_in(field_monitor, squeeze=True)
     vmax = np.max(np.abs(Ey11))
     f=plt.figure()
-    ax1 = f.add_subplot(211)
+    ax1 = f.add_subplot(311)
     ax1.imshow(np.abs(Ey11), extent=[0,X-2*w_pml,0,Y-2*w_pml],vmin=0, vmax=vmax,
                 cmap='inferno')
 
     vmax = np.max(np.abs(Ey22))
-    ax2 = f.add_subplot(212)
+    ax2 = f.add_subplot(312)
     ax2.imshow(np.abs(Ey22), extent=[0, X-2*w_pml, 0, Y-2*w_pml], vmin=0,
                vmax=vmax, cmap='inferno')
+
+    vmax = np.max(np.abs(eps_arr))
+    ax3 = f.add_subplot(313)
+    ax3.imshow(np.abs(eps_arr), extent=[0, X-2*w_pml, 0, Y-2*w_pml], vmin=0,
+               vmax=vmax, cmap='seismic')
 
     plt.show()
