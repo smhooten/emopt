@@ -220,9 +220,17 @@ class FDTD(MaxwellSolver):
         The height of the simulation excluding PMLs.
     """
 
-    def __init__(self, X, Y, Z, dx, dy, dz, wavelength, rtol=1e-6, nconv=100,
+    def __init__(self, X, Y, Z, dx, dy, dz, wavelength, rtol=1e-6, nconv=None,
                  min_rindex=1.0):
         super(FDTD, self).__init__(3)
+
+        if(nconv is None):
+            nconv = N_PROC*10
+        elif(nconv < N_PROC*2):
+            warning_message('Number of convergence test points (nconv) is ' \
+                            'likely too low. If the simulation does not ' \
+                            'converge, increase nconv to > 2 * # processors',
+                            'emopt.fdtd')
 
         self._dx = dx
         self._dy = dy
@@ -240,7 +248,7 @@ class FDTD(MaxwellSolver):
         self._R = wavelength/(2*pi)
 
         ## Courant number < 1
-        self._Sc = 0.99
+        self._Sc = 0.95
         self._min_rindex = min_rindex
         dt = self._Sc * np.min([dx, dy, dz])/self._R / np.sqrt(3) * min_rindex
         self._dt = dt
@@ -743,6 +751,7 @@ class FDTD(MaxwellSolver):
             src_arrays = src
 
         self.__set_sources(src_arrays, domain, adjoint=False)
+        COMM.Barrier()
 
     def set_adjoint_sources(self, src):
         """Set the adjoint sources.
@@ -783,7 +792,6 @@ class FDTD(MaxwellSolver):
             The domain which specifies the location of the source arrays
         """
         self.__set_sources(src, domain, adjoint=True)
-
 
     def clear_sources(self):
         """Clear simulation sources."""
@@ -970,6 +978,8 @@ class FDTD(MaxwellSolver):
         ody = R/self._dy
         odz = R/self._dz
         Nx, Ny, Nz = self._Nx, self._Ny, self._Nz
+
+        COMM.Barrier()
 
         # define time step
         dt = self._dt
