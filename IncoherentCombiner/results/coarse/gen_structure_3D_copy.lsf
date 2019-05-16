@@ -1,0 +1,31 @@
+#clear everything.
+switchtolayout;
+selectall;
+delete;
+
+# General simulation parameters
+um = 1e-6;
+nm = 1e-9;
+
+dx = 40*nm;
+dy = dx;
+dz = dx;
+
+auto_shutoff = 1e-9;
+
+# file to load with structure
+#fname = '../data/completed/parallel_crossing_results_fine_dx30nm.h5';
+fname = 'optResult.h5';
+data = h5info(fname);
+
+# get the polygon data
+xs = h5read(fname, '/x')*um;
+ys = h5read(fname, '/y')*um;
+#X = 39.6*um; #h5read(fname, '/misc/X full')*um;
+#Y = 4.75*um; #h5read(fname, '/misc/Y full')*um;
+#Z = 2.0*um; #h5read(fname, '/misc/Z full')*um;
+
+X = 12.0*um;
+Y = 5.0*um;
+Z = 2.0*um;
+
