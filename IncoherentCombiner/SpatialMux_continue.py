@@ -32,9 +32,9 @@ class SpatialMuxAdjointMethod(AdjointMethod):
         self.ZminD = ZminD
         self.ZmaxD = ZmaxD
 
-        self.roc_min = 0.2
+        self.roc_min = 0.15
         self.k_roc = 5
-        self.A_roc = 0.005
+        self.A_roc = 0.001
 
         self.step_roc = 1e-8
 
@@ -83,6 +83,13 @@ class SpatialMuxAdjointMethod(AdjointMethod):
         ids = self.indices
         N = len(ids)
 
+        ##### TEMP ####
+        #x_store = []
+        #y_store = []
+        #ids_store = []
+
+        ##### TEMP ####
+
         for i in range(N):
             #if(ids[i] == 0):
             #    x1 = x[-2]; x2 = x[ids[i]]; x3 = x[ids[i]+1]
@@ -102,8 +109,10 @@ class SpatialMuxAdjointMethod(AdjointMethod):
             penalty = emopt.fomutils.step(self.roc_min - roc, self.k_roc,
                                           A=self.A_roc)
             roc_fom += penalty
-            if(penalty>=0.0025):
-                print x2, y2, ids[i]
+            #if(penalty>=0.0025):
+            #    x_store.append([x1, x2, x3])
+            #    y_store.append([y1,y2,y3])
+            #    ids_store.append([ids[i]-1, ids[i], ids[i]+1])
 
         return roc_fom
 
@@ -417,24 +426,24 @@ class SpatialMux(object):
 
         inds = [i for i in range(x.size) if x[i]>=2.61 and x[i]<=10.59]
 
-        roc_bla = 0.22
+        roc_bla = 0.2
 
         make_round = [False for i in x]
         for i in inds: make_round[i] = True
         #make_round[11] = True
         make_round[14] = True
 
-        x, y = emopt.geometry.fillet(x, y, roc_bla, make_round=make_round,
-                                     points_per_90=12)
+        #x, y = emopt.geometry.fillet(x, y, roc_bla, make_round=make_round,
+        #                             points_per_90=12)
 
-        for i in range(x.size):
-            if x[i] >=5.2 and x[i] <= 5.8 and y[i]>=2.8 and y[i]<=3.2:
-                x[i] += 0.3
-                y[i] -= 0.1
-        x, y = emopt.geometry.populate_lines(x, y, ds=dx,
-                                                     refine_box=[w_pml+Lio,
-                                                                 X-w_pml-Lio,
-                                                                 0, 6])
+        #for i in range(x.size):
+        #    if x[i] >=5.2 and x[i] <= 5.8 and y[i]>=2.8 and y[i]<=3.2:
+        #        x[i] += 0.3
+        #        y[i] -= 0.1
+        #x, y = emopt.geometry.populate_lines(x, y, ds=dx,
+        #                                             refine_box=[w_pml+Lio,
+        #                                                         X-w_pml-Lio,
+        #                                                         0, 6])
         inds = [i for i in range(x.size) if (x[i]>w_pml+Lio and
                                                      x[i]<X-w_pml-Lio)]
 
@@ -454,6 +463,8 @@ class SpatialMux(object):
             plt.show()
 
 
+        #filebla = 'initialpts'
+        #np.savez(filebla, x=x, y=y, inds=inds)
 
         spacer = emopt.grid.Polygon()
         spacer.set_points(x, y)

@@ -318,7 +318,7 @@ class SpatialMux(object):
         w_wg = 0.55
         w_wg_out = 0.9
         wg_spacing = 1.0
-        wg_shift = -0.5
+        wg_shift = 0.0
         Lio = 2.0
 
         h_spacer = 0.04
@@ -346,7 +346,7 @@ class SpatialMux(object):
         #                           wg_spacing/2+w_wg]))
 
         x_pts.append(np.array([position1+5*1.5*dx]))
-        y_pts.append(np.array([Y/2+wg_spacing/2+w_wg+5*dx]))
+        y_pts.append(np.array([Y/2+wg_spacing/2+w_wg]))
 
         #x_pts.append(np.array([position2]))
         #y_pts.append(Y/2+np.array([w_wg_out/2+wg_shift+5*dx]))
@@ -361,7 +361,7 @@ class SpatialMux(object):
         #y_pts.append(Y/2+np.array([-w_wg_out/2+wg_shift]))
 
         x_pts.append(np.array([position1+5*1.5*dx]))
-        y_pts.append(np.array([Y/2-wg_spacing/2-w_wg-5*dx]))
+        y_pts.append(np.array([Y/2-wg_spacing/2-w_wg]))
 
 
         x_pts.append(np.array([w_pml+Lio, 0, 0, w_pml+Lio]))
@@ -373,17 +373,17 @@ class SpatialMux(object):
         #y_pts.append(np.array([Y/2-3*1.5*dx]))
 
         x_pts.append(np.array([position1]))
-        y_pts.append(Y/2+np.array([-wg_spacing/2-5*dx]))
+        y_pts.append(Y/2+np.array([-wg_spacing/2]))
         
-        x_pts.append(np.array([position1+20*dx]))
-        y_pts.append(np.array([Y/2-10*dx]))
+        x_pts.append(np.array([position1+15*dx]))
+        y_pts.append(np.array([Y/2-8*dx]))
         
 
-        x_pts.append(np.array([position1+20*dx]))
-        y_pts.append(np.array([Y/2+10*dx]))
+        x_pts.append(np.array([position1+15*dx]))
+        y_pts.append(np.array([Y/2+8*dx]))
 
         x_pts.append(np.array([position1]))
-        y_pts.append(Y/2+np.array([wg_spacing/2+5*dx]))
+        y_pts.append(Y/2+np.array([wg_spacing/2]))
         
         x_pts.append(np.array([w_pml+Lio]))
         y_pts.append(Y/2+np.array([wg_spacing/2]))

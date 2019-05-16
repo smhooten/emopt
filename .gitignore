@@ -43,6 +43,7 @@
 ._.DS_Store
 ._*
 *.fsp
+*.npz
 
 # Python dist files
 build/
