@@ -1,10 +1,20 @@
+from __future__ import absolute_import
+from builtins import zip
+from builtins import range
+from builtins import object
 import numpy as np
 import scipy
 from math import pi
-from misc import warning_message, error_message, NOT_PARALLEL
+from .misc import warning_message, error_message, NOT_PARALLEL
+
+__author__ = "Andrew Michaels"
+__license__ = "GPL License, Version 3.0"
+__version__ = "2019.5.6"
+__maintainer__ = "Andrew Michaels"
+__status__ = "development"
 
 def fillet(x, y, R, make_round=None, points_per_90=10, equal_thresh=1e-8,
-           ignore_roc_lim=False):
+           ignore_roc_lim=False, points_per_bend=None):
     """Round corners of a polygon.
 
     This function replaces sharp corners with circular arcs. The radius of
@@ -34,6 +44,10 @@ def fillet(x, y, R, make_round=None, points_per_90=10, equal_thresh=1e-8,
     equal_thresh : float
         The threshold used for comparing values. If the |difference| between
         two values is less than this value, they are considered equal.
+    points_per_bend : int (optional)
+        The number of points to use to define the bend. This parameter
+        overrides points_per_90. Use this if you need the number of points in a
+        fillet to remain fixed regardless of the corner angle.
 
     Returns
     -------
@@ -50,13 +64,13 @@ def fillet(x, y, R, make_round=None, points_per_90=10, equal_thresh=1e-8,
     N -= 1
 
     closed = True
+    i = 0
     if(x[0] != x[-1] or y[0] != y[-1]):
         closed = False
-        i += 1
         xn.append(x[0])
         yn.append(y[0])
+        i = 1
 
-    i = 0
     while(i < N):
         if(make_round is None or make_round[i]):
             # get current and adjacent points
@@ -130,7 +144,10 @@ def fillet(x, y, R, make_round=None, points_per_90=10, equal_thresh=1e-8,
                 if(theta2 - theta1 > pi): theta2 -= 2*pi
                 elif(theta1 - theta2 > pi): theta2 += 2*pi
 
-                Np = int(np.abs(theta2-theta1) / (pi/2) * points_per_90)
+                if(points_per_bend == None):
+                    Np = int(np.abs(theta2-theta1) / (pi/2) * points_per_90)
+                else:
+                    Np = points_per_bend
                 if(Np < 1):
                     Np = 1
                 thetas = np.linspace(theta1, theta2, Np)
@@ -399,7 +416,7 @@ class FourierDisplacer(object):
 
         return ys
 
-class NURBS:
+class NURBS(object):
     """Create a NURBS curve.
 
     This class wraps a NURBS-python NURBS object and provides some additional
@@ -446,12 +463,12 @@ class NURBS:
         except ImportError:
             error_message('The module `geomdl` is not installed, but it is required for NURBS!')
 
-        self._x = x
-        self._y = y
+        self._x = np.array(x)
+        self._y = np.array(y)
         self._n = len(x)
 
         if(w is None):
-            w = np.ones(x.shape)
+            w = np.ones(self._x.shape)
         self._w = w
 
         # Create the curve
@@ -597,3 +614,35 @@ class NURBS:
 
         roc = (xdot**2 + ydot**2)**(3.0/2.0) / np.abs(xdot*yddot - xddot*ydot)
         return roc
+
+    def evaluate_tangent(self, u=None, Neval=None):
+        """Evaluate the tangent direction along the curve.
+
+        Notes
+        -----
+        1. This is the normalized first derivative of x(u) and y(u)
+
+        returns
+        -------
+        numpy.ndarray, numpy.ndarray
+            The tangential vectors at each point
+        """
+        if(u is not None):
+            us = [u]
+            Neval = 1
+        else:
+            us = np.linspace(0,1,Neval)
+
+        # Calculate 1st and second derivative
+        xdot = np.zeros(Neval)
+        ydot = np.zeros(Neval)
+        for i in range(Neval):
+            xydots = self._curve.derivatives(us[i],order=2)
+            dx = xydots[1][0]
+            dy = xydots[1][1]
+
+            norm = np.sqrt(dx**2 + dy**2)
+            xdot[i] = dx/norm
+            ydot[i] = dy/norm
+
+        return xdot, ydot

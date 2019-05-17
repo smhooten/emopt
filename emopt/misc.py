@@ -1,8 +1,11 @@
 """Miscellanious functions useful for simulation and optimization.
 """
+from __future__ import print_function
 
+from builtins import object
 import numpy as np
 from scipy import interpolate
+from math import pi
 import os
 
 from petsc4py import PETSc
@@ -11,7 +14,7 @@ import warnings, inspect
 
 __author__ = "Andrew Michaels"
 __license__ = "GPL License, Version 3.0"
-__version__ = "0.4"
+__version__ = "2019.5.6"
 __maintainer__ = "Andrew Michaels"
 __status__ = "development"
 
@@ -38,6 +41,10 @@ def n_silicon(wavelength):
     """Load silicon refractive index vs wavlength and interpolate at desired wavelength.
     A piecewise cubic fit is used for the interpolation.
 
+    Source: H. H. Li. Refractive index of silicon and germanium and its wavelength and
+    temperature derivatives, J. Phys. Chem. Ref. Data 9, 561-658 (1993)
+    via refractiveindex.info
+
     Parameters
     ----------
     wavelength : float
@@ -58,7 +65,60 @@ def n_silicon(wavelength):
 
     return n_interp(wavelength)
 
+def n_SiO2(wavelength):
+    """Load SiO2 refractive index vs wavlength and interpolate at desired wavelength.
+    A piecewise cubic fit is used for the interpolation.
 
+    Source: I. H. Malitson. Interspecimen comparison of the refractive index of fused 
+    silica, J. Opt. Soc. Am. 55, 1205-1208 (1965)
+    via refractiveindex.info
+
+    Parameters
+    ----------
+    wavelength : float
+        The wavlenegth in [um] between 0.21 um and 6.7 um
+
+    Returns
+    -------
+        Refractive index of SiO2 at desired wavelength.
+    """
+
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    data_path = ''.join([dir_path, '/data/SiO2.csv'])
+
+    data_SiO2 = np.loadtxt(data_path, delimiter=',', skiprows=1)
+    wlen_SiO2 = data_SiO2[:,0]
+    n_SiO2 = data_SiO2[:,1]
+    n_interp = interpolate.interp1d(wlen_SiO2, n_SiO2, kind='cubic')
+
+    return n_interp(wavelength)
+
+def n_Si3N4(wavelength):
+    """Load Si3N4 refractive index vs wavlength and interpolate at desired wavelength.
+    A piecewise cubic fit is used for the interpolation.
+
+    Source: K. Luke, Y. Okawachi, M. R. E. Lamont, A. L. Gaeta, M. Lipson. Broadband
+    mid-infrared frequency comb generation in a Si3N4 microresonator, Opt. Lett. 40,
+    4823-4826 (2015) via refractiveindex.info
+
+    Parameters
+    ----------
+    wavelength : float
+        The wavlenegth in [um] between 0.31 um and 5.504 um
+
+    Returns
+    -------
+        Refractive index of SiO2 at desired wavelength.
+    """
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    data_path = ''.join([dir_path, '/data/Si3N4.csv'])
+
+    data_Si3N4 = np.loadtxt(data_path, delimiter=',', skiprows=1)
+    wlen_Si3N4 = data_Si3N4[:,0]
+    n_Si3N4 = data_Si3N4[:,1]
+    n_interp = interpolate.interp1d(wlen_Si3N4, n_Si3N4, kind='cubic')
+
+    return n_interp(wavelength)
 
 def info_message(message):
     """Print a formatted, easily-distinguishable message.
@@ -517,3 +577,107 @@ def get_dark_cmaps():
     struct_cmap=LinearSegmentedColormap.from_list('struct_cmap', struct_cols)
 
     return field_cmap, struct_cmap
+
+def gaussian_fields(x, z, prop_dist, w0, theta, wavelength, n0):
+    """Generate the fields of a Gaussian beam.
+
+    Notes
+    -----
+    1. These fields are non-dimensionalized to be consistent with EMopt's
+    solvers.
+    2. A single E component and two H components is returned.
+    These can be projected onto any desired polarization.
+    3. The fields are calculated in the x,z plane at the specified y position.
+    4. The amplitude is equal to 1.0
+
+    Parameters
+    ----------
+    x : float or numpy.ndarray
+        The x positions.
+    z : float or numpy.ndarray
+        The z positions.
+    prop_dist : float
+        The propagation distance along the beam direction
+    w0 : float
+        The waist size of the beam.
+    theta : float
+        The angle (with respect to y axis in the x-y plane) of propagation.
+    wavelength : float
+        The wavelength of light.
+    n0 : float
+        The refractive index of the propagation medium
+
+    Returns
+    -------
+    (numpy.ndarray, numpy.ndarray, numpy.ndarray)
+        The calculated electric and magnetic fields.
+    """
+    xG = np.array(x * np.cos(theta))
+    yG = np.array(x * np.sin(theta))
+    zG = np.array(z)
+
+    r = np.sqrt(xG**2 + zG**2)
+    k0 = 2*pi*n0/wavelength
+    yR = pi*w0**2/wavelength
+
+    w_y = w0 * np.sqrt(1+(yG/yR)**2)
+    invR_y = yG / (yG**2 + yR**2)
+    psi_y = np.nan_to_num(np.arctan(yG/yR))
+
+    Ez = w0 / w_y * np.exp(-r**2/w_y**2) \
+           * np.exp(1j*(k0*yG + k0*invR_y*r**2/2.0-psi_y))
+
+    Hx = Ez*np.cos(theta) * n0
+    Hy = -1*Ez*np.sin(theta) * n0
+
+    return (Ez, Hx, Hy)
+
+def gaussian_mode(x, z, w0, theta, wavelength, n0):
+    """Generate the fields of an approximately Gaussian mode.
+
+    This differs from gaussian_fields in that it assumes the generated field
+    consists of only a single wave vector. This mimics the mode of an optical
+    fiber.
+
+    Notes
+    -----
+    1. These fields are non-dimensionalized to be consistent with EMopt's
+    solvers.
+    2. A single E component and two H components is returned.
+    These can be projected onto any desired polarization.
+    3. The fields are calculated in the x,z plane.
+    4. The amplitude is equal to 1.0
+
+    Parameters
+    ----------
+    x : float or numpy.ndarray
+        The x positions.
+    z : float or numpy.ndarray
+        The z positions.
+    w0 : float
+        The waist size of the beam.
+    theta : float
+        The angle (with respect to y axis in the x-y plane) of propagation.
+    wavelength : float
+        The wavelength of light.
+    n0 : float
+        The refractive index of the propagation medium
+
+    Returns
+    -------
+    (numpy.ndarray, numpy.ndarray, numpy.ndarray)
+        The calculated electric and magnetic fields.
+    """
+    xG = np.array(x * np.cos(theta))
+    yG = np.array(x * np.sin(theta))
+    zG = np.array(z)
+
+    r = np.sqrt(xG**2 + zG**2)
+    k0 = 2*pi*n0/wavelength
+
+    Ez = np.exp(-r**2/w0**2) * np.exp(1j*k0*yG)
+
+    Hx = Ez*np.cos(theta) * n0
+    Hy = -1*Ez*np.sin(theta) * n0
+
+    return (Ez, Hx, Hy)

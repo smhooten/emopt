@@ -7,7 +7,7 @@ from numpy.ctypeslib import ndpointer
 
 __author__ = "Andrew Michaels"
 __license__ = "GPL License, Version 3.0"
-__version__ = "0.4"
+__version__ = "2019.5.6"
 __maintainer__ = "Andrew Michaels"
 __status__ = "development"
 
@@ -44,6 +44,9 @@ libFDTD.FDTD_set_local_grid.restype = None
 
 libFDTD.FDTD_set_dt.argtypes = [c_void_p, c_double]
 libFDTD.FDTD_set_dt.restype = None
+
+libFDTD.FDTD_set_complex_eps.argtypes = [c_void_p, c_bool]
+libFDTD.FDTD_set_complex_eps.restype = None
 
 libFDTD.FDTD_set_field_arrays.argtypes = [c_void_p,
                                           c_double_p, c_double_p, c_double_p,

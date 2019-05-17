@@ -17,7 +17,7 @@ class MakeInstall(SetuptoolsInstall):
         SetuptoolsInstall.do_egg_install(self)
 
 setup(name='emopt',
-      version='0.4',
+      version='2019.5.6',
       description='A suite of tools for optimizing the shape and topology of ' \
       'electromagnetic structures.',
       url='https://github.com/anstmichaels/emopt',
@@ -27,5 +27,5 @@ setup(name='emopt',
       packages=['emopt'],
       package_data={'emopt':['*.so', '*.csv', 'data/*']},
       cmdclass={'install':MakeInstall},
-      install_requires=['numpy', 'scipy', 'petsc4py', 'slepc4py', 'mpi4py'],
+      install_requires=['numpy', 'scipy', 'mpi4py', 'petsc4py', 'slepc4py'],
       zip_safe=False)

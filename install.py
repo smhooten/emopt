@@ -38,9 +38,9 @@ from argparse import ArgumentParser
 emopt_dep_file = ".emopt_deps"
 
 # Package Parameters
-EIGEN_VERSION = "3.3.4"
-BOOST_VERSION = "boost-1.67.0"
-SLEPC_VERSION = "3.10.0"
+EIGEN_VERSION = "3.3.7"
+BOOST_VERSION = "master"
+SLEPC_VERSION = "3.11.0"
 
 
 class Logger(object):

@@ -42,8 +42,7 @@
 .DS_Store
 ._.DS_Store
 ._*
-*.fsp
-*.npz
+*.log
 
 # Python dist files
 build/

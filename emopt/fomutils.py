@@ -1,70 +1,23 @@
 """
 Common functions useful for calculating figures of merit and their derivatives.
 """
-import fdfd, misc
-from misc import NOT_PARALLEL
-from defs import FieldComponent
+from __future__ import absolute_import
+from builtins import range
+from builtins import object
+from . import fdfd, misc
+from .misc import NOT_PARALLEL
+from .defs import FieldComponent
 import numpy as np
 
 __author__ = "Andrew Michaels"
 __license__ = "GPL License, Version 3.0"
-__version__ = "0.4"
+__version__ = "2019.5.6"
 __maintainer__ = "Andrew Michaels"
 __status__ = "development"
 
 #####################################################################################
-# Miscellanious FOM helper functions
+# Step and Rect Functions
 #####################################################################################
-
-def radius_of_curvature(x1, x2, x3, y1, y2, y3):
-    """Compute the approximate radius of curvature of three points.
-
-    This is achieved by first fitting a parabola to the three points and then
-    finding the radius of cruvature of that parabola.
-
-    Notes
-    -----
-    To find the derivative of this function, it is easiest to simply perform a
-    finite difference.
-
-    Parameters
-    ----------
-    x1 : float
-        The x coordinate of the first point
-    x2 : float
-        The x coordinate of the second point
-    x3 : float
-        The x coordinate of the third point
-    y1 : float
-        The y coordinate of the first point
-    y2 : float
-        The y coordinate of the second point
-    y3 : float
-        The y coordinate of the third point
-
-    Returns
-    float
-        The approximate radius of curvature of the set of points
-    """
-    t0 = 0
-    t1 = np.sqrt((x2-x1)**2 + (y2-y1)**2)
-    t2 = np.sqrt((x3-x2)**2 + (y3-y2)**2) + t1
-    t1 = t1/t2
-    t2 = 1.0
-
-    c = x1
-    a = (x2 - (x3-x1)*t1 - x1)/(t1**2-t1)
-    b = x3-x1-a
-
-    f = y1
-    d = (y2 - (y3-y1)*t1 - y1)/(t1**2-t1)
-    e = y3-y1-d
-
-    # We calculate the radius of curvature at point x2
-    R = np.power((2*a*t1+b)**2 + (2*d*t1+e)**2, 1.5) / np.abs((2*a*t1+b)*2*d - (2*d*t1+e)*2*a)
-
-    return float(R)
-
 
 def step(x, k, y0=0, A=1.0):
     """Compute the value of a smooth and analytic step function.
@@ -97,61 +50,27 @@ def step(x, k, y0=0, A=1.0):
     """
     return A / (1 + np.exp(-k*x)) + y0
 
-def step_derivative(x, k, A=1.0):
-    pass
-
-def calc_ROC_foms(x, y, Rmin, k):
-    """Calculate a figure of merit which imposes a minimum radius of curvature
-    constraint.
-
-    A radius of curvature constraint can be imposed by first calculating the
-    approximate radius of curvature at every point and then penalizing a figure
-    of merit when radii of curvature fall below a minimum value.  Penalization
-    is achieved by applying a (smooth) step function to the radii of curvature;
-    when a radius is below a specified minimum, the resulting output of
-    the function drops below zero, reducing the figure of merit.
+def step_derivative(x, k, y0=0, A=1.0):
+    """Compute the derivative of a smooth approximation of a step function.
 
     Parameters
     ----------
-    x : numpy.ndarray
-        The x coordinates of a polygon or connected set of points
-    y : numpy.ndarray
-        The y coordinates of a polygon or connected set of points
-    Rmin : float
-        The minimum radius of curvature
+    x : float or numpy.ndarray
+        The input values
     k : float
-        The steepness of the step function used to determine violation of Rmin
+        The steepness of step function
+    y0 : float (optional)
+        The shift of the step function (default = 0)
+    A : float (optional)
+        The scale factor of the step function (default = 1.0)
 
     Returns
     -------
-    numpy.ndarray
-        The list of ROC foms computed for each point.
+    float or numpy.ndarray
+        The dertivative of the step function applied to x.
     """
-    N_pts = len(x)
-
-    foms = np.zeros(N_pts)
-    Rs = np.zeros(N_pts)
-
-    # Original Unvectorized version
-    for i in range(N_pts):
-         j1 = i-1
-         j2 = i
-         j3 = i+1
-
-         if(i == 0):
-             j1 = N_pts-1
-         if(i == N_pts - 1):
-             j3 = 0
-
-         x1 = x[j1]; x2 = x[j2]; x3 = x[j3]
-         y1 = y[j1]; y2 = y[j2]; y3 = y[j3]
-
-         Ri = radius_of_curvature(x1,x2,x3,y1,y2,y3)
-         Rs[i] = Ri
-         fom_i = 1 - step(Ri-Rmin, k)
-         foms[i] = fom_i
-
-    return np.array(foms), Rs
+    exp_func = np.exp(-k*x)
+    return A*k*exp_func / (1+exp_func)**2
 
 def rect(x, w1p, ws):
     """Apply a smooth rect function.
@@ -174,8 +93,8 @@ def rect(x, w1p, ws):
         The value of rect(x).
     """
     k = 2*np.log(99.0)/ws
-    x1 = -w1p/2.0 + 1/k*np.log(99.0)
-    x2 = w1p/2.0 - 1/k*np.log(99.0)
+    x1 = -w1p/2.0 + ws/2
+    x2 = w1p/2.0 - ws/2
 
     return 1/(1 + np.exp(-k*(x-x1))) - 1/(1 + np.exp(-k*(x-x2)))
 
@@ -203,11 +122,736 @@ def rect_derivative(x, w1p, ws):
 
     return k*np.exp(-k*(x-x1))/(1 + np.exp(-k*(x-x1)))**2 - k*np.exp(-k*(x-x2))/(1 + np.exp(-k*(x-x2)))**2
 
-#===================================================================================
-# Mode Match
-#===================================================================================
+#####################################################################################
+# Radius of Curvature Functions
+#####################################################################################
 
-class ModeMatch:
+def radius_of_curvature(x1, x2, x3, y1, y2, y3):
+    """Compute the approximate radius of curvature of three points.
+
+    This is achieved by first fitting a parabola to the three points and then
+    finding the radius of cruvature of that parabola.
+
+    Notes
+    -----
+    The radius of curvature is signed.
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The approximate radius of curvature of the set of points
+    """
+    t0 = 0
+    t1 = 0.5
+    t2 = 1.0
+
+    c = x1
+    a = (x2 - (x3-x1)*t1 - x1)/(t1**2-t1)
+    b = x3-x1-a
+
+    f = y1
+    d = (y2 - (y3-y1)*t1 - y1)/(t1**2-t1)
+    e = y3-y1-d
+
+    # We calculate the radius of curvature at point x2
+    R = np.power((2*a*t1+b)**2 + (2*d*t1+e)**2, 1.5) / \
+                ((2*a*t1+b)*2*d - (2*d*t1+e)*2*a)
+
+    return float(R)
+
+def d_roc_dx1(x1, x2, x3, y1, y2, y3):
+    """Calculate the derivative of the radius of curvature with respect to the
+    changes in the x coordinate of the point.
+
+    This function calculates the derivative of the approximate radius of
+    curvature at a point (x2, y2) with respect to x1.
+
+    Notes
+    -----
+    Currently this is computed using a finite difference which will introduce a
+    small amount of error and be slightly less performant than an analytic
+    implementation. An analytic implementation will be implemented soon!
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The derivative of the approximate radius of curvature at point (x2, y2)
+        with respect to x1.
+    """
+    return 0.125*(12.0*(-x1 + x3)*((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))*((x1 - x3)**2 + \
+           (y1 - y3)**2)**0.5 - 16.0*(y2 - y3)*((x1 - x3)**2 + \
+           (y1 - y3)**2)**1.5)/((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))**2
+
+def d_roc_dx2(x1, x2, x3, y1, y2, y3):
+    """Calculate the derivative of the radius of curvature with respect to the
+    changes in the x coordinate of the point.
+
+    This function calculates the derivative of the approximate radius of
+    curvature at a point (x2, y2) with respect to x2.
+
+    Notes
+    -----
+    Currently this is computed using a finite difference which will introduce a
+    small amount of error and be slightly less performant than an analytic
+    implementation. An analytic implementation will be implemented soon!
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The derivative of the approximate radius of curvature at point (x2, y2)
+        with respect to x2.
+    """
+    return 2.0*(y1 - y3)*((x1 - x3)**2 + \
+           (y1 - y3)**2)**1.5/((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))**2
+
+def d_roc_dx3(x1, x2, x3, y1, y2, y3):
+    """Calculate the derivative of the radius of curvature with respect to the
+    changes in the x coordinate of the point.
+
+    This function calculates the derivative of the approximate radius of
+    curvature at a point (x2, y2) with respect to x3.
+
+    Notes
+    -----
+    Currently this is computed using a finite difference which will introduce a
+    small amount of error and be slightly less performant than an analytic
+    implementation. An analytic implementation will be implemented soon!
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The derivative of the approximate radius of curvature at point (x2, y2)
+        with respect to x3.
+    """
+    return 0.125*(12.0*(x1 - x3)*((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))*((x1 - x3)**2 + \
+           (y1 - y3)**2)**0.5 - 16.0*(y1 - y2)*((x1 - x3)**2 + \
+           (y1 - y3)**2)**1.5)/((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))**2
+
+def d_roc_dy1(x1, x2, x3, y1, y2, y3):
+    """Calculate the derivative of the radius of curvature with respect to the
+    changes in the y coordinate of the point.
+
+    This function calculates the derivative of the approximate radius of
+    curvature at a point (x2, y2) with respect to y1.
+
+    Notes
+    -----
+    Currently this is computed using a finite difference which will introduce a
+    small amount of error and be slightly less performant than an analytic
+    implementation. An analytic implementation will be implemented soon!
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The derivative of the approximate radius of curvature at point (x2, y2)
+        with respect to y1.
+    """
+    return 0.125*(16.0*(x2 - x3)*((x1 - x3)**2 + (y1 - y3)**2)**1.5 + \
+           12.0*(-y1 + y3)*((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))*((x1 - x3)**2 + \
+           (y1 - y3)**2)**0.5)/((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))**2
+
+def d_roc_dy2(x1, x2, x3, y1, y2, y3):
+    """Calculate the derivative of the radius of curvature with respect to the
+    changes in the y coordinate of the point.
+
+    This function calculates the derivative of the approximate radius of
+    curvature at a point (x2, y2) with respect to y2.
+
+    Notes
+    -----
+    Currently this is computed using a finite difference which will introduce a
+    small amount of error and be slightly less performant than an analytic
+    implementation. An analytic implementation will be implemented soon!
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The derivative of the approximate radius of curvature at point (x2, y2)
+        with respect to y2.
+    """
+    return 2.0*(-x1 + x3)*((x1 - x3)**2 + \
+           (y1 - y3)**2)**1.5/((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))**2
+
+def d_roc_dy3(x1, x2, x3, y1, y2, y3):
+    """Calculate the derivative of the radius of curvature with respect to the
+    changes in the y coordinate of the point.
+
+    This function calculates the derivative of the approximate radius of
+    curvature at a point (x2, y2) with respect to y3.
+
+    Notes
+    -----
+    Currently this is computed using a finite difference which will introduce a
+    small amount of error and be slightly less performant than an analytic
+    implementation. An analytic implementation will be implemented soon!
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the first point
+    x2 : float
+        The x coordinate of the second point
+    x3 : float
+        The x coordinate of the third point
+    y1 : float
+        The y coordinate of the first point
+    y2 : float
+        The y coordinate of the second point
+    y3 : float
+        The y coordinate of the third point
+
+    Returns
+    -------
+    float
+        The derivative of the approximate radius of curvature at point (x2, y2)
+        with respect to y3.
+    """
+    return 0.125*(16.0*(x1 - x2)*((x1 - x3)**2 + (y1 - y3)**2)**1.5 + \
+           12.0*(y1 - y3)*((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))*((x1 - x3)**2 + \
+           (y1 - y3)**2)**0.5)/((x1 - x3)*(2.0*y1 - 4.0*y2 + 2.0*y3) - \
+           (y1 - y3)*(2.0*x1 - 4.0*x2 + 2.0*x3))**2
+
+def rocp(x, y, indices, Rmin, dR):
+    """Calculate a penalty which acts as a minimum radius of curvature
+    constraint.
+
+    A radius of curvature constraint can be imposed by first calculating the
+    approximate radius of curvature at every point and then penalizing a figure
+    of merit when radii of curvature fall below a minimum value.  Penalization
+    is achieved by applying a (smooth) rect function to the radii of curvature;
+    when a radius is below a specified minimum, the resulting output of
+    the function drops below zero, reducing the figure of merit.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        The x coordinates of a polygon or connected set of points
+    y : numpy.ndarray
+        The y coordinates of a polygon or connected set of points
+    indices : list or numpy.ndarray
+        The list of array indices for which the radius of curvature is
+        calculated
+    Rmin : float
+        The minimum radius of curvature
+    dR : float
+        The steepness of the step function used to determine violation of Rmin
+
+    Returns
+    -------
+    float
+        The values of the radius of curvature penalty function.
+    """
+    penalty = 0.0
+    ps = []
+
+    for i in indices:
+        x1 = x[i-1]; x2 = x[i]; x3 = x[i+1]
+        y1 = y[i-1]; y2 = y[i]; y3 = y[i+1]
+
+        roc = radius_of_curvature(x1, x2, x3, y1, y2, y3)
+
+        penalty += rect(roc, Rmin*2, dR)
+        ps.append(rect(roc, Rmin*2, dR))
+
+    return penalty
+
+def rocp_derivative(x, y, indices, Rmin, dR):
+    """Calculate the derivative of the radius of curvature penalty with respect
+    to the set of (x,y) coordinates.
+
+    Notes
+    -----
+    This function assumes that the indices are 'sorted', i.e., the indices
+    correspond to moving clockwise or counter-clockwise around the line
+    string/polygon. The function will not work if the points are out of order.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        The x coordinates of a polygon or connected set of points
+    y : numpy.ndarray
+        The y coordinates of a polygon or connected set of points
+    indices : list or numpy.ndarray
+        The list of array indices for which the radius of curvature is
+        calculated
+    Rmin : float
+        The minimum radius of curvature
+    dR : float
+        The steepness of the step function used to determine violation of Rmin
+
+    Returns
+    -------
+    np.array, np.array
+        Two lists containing d/dx(rocp) and d/dy(rocp)
+    """
+    Ni = len(indices)
+    dPdx = np.zeros(Ni)
+    dPdy = np.zeros(Ni)
+
+    for i in range(Ni):
+        j = indices[i]
+        x1 = x[j-1]; x2 = x[j]; x3 = x[j+1]
+        y1 = y[j-1]; y2 = y[j]; y3 = y[j+1]
+
+        roc = radius_of_curvature(x1, x2, x3, y1, y2, y3)
+        rect_deriv = rect_derivative(roc, 2*Rmin, dR)
+
+        dPdx[i] += rect_deriv * d_roc_dx2(x1, x2, x3, y1, y2, y3)
+        dPdy[i] += rect_deriv * d_roc_dy2(x1, x2, x3, y1, y2, y3)
+
+        if(i > 0 and j-1 == indices[i-1]):
+            dPdx[i-1] += rect_deriv * d_roc_dx1(x1, x2, x3, y1, y2, y3)
+            dPdy[i-1] += rect_deriv * d_roc_dy1(x1, x2, x3, y1, y2, y3)
+
+        if(i < Ni-1 and j+1 == indices[i+1]):
+            dPdx[i+1] += rect_deriv * d_roc_dx3(x1, x2, x3, y1, y2, y3)
+            dPdy[i+1] += rect_deriv * d_roc_dy3(x1, x2, x3, y1, y2, y3)
+
+    return np.nan_to_num(dPdx), np.nan_to_num(dPdy)
+
+#####################################################################################
+# Bridge and Gap Size Functions
+#####################################################################################
+
+def ndisty(x, y, y0):
+    """Calculate the approximate distance from each point in a polygon to a y
+    position along the polygon normal direction.
+
+    Given a polygon defined by a set of x and y coordinates, find the distance
+    from each point in that polygon to a desired y position. The normal
+    direction is approximated based on the surrounding points.s
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of distances with length N-2 where N=len(x)
+    """
+    x = np.array(x)
+    y = np.array(y)
+
+    x1 = x[0:-2]; x2 = x[1:-1]; x3 = x[2:]
+    y1 = y[0:-2]; y2 = y[1:-1]; y3 = y[2:]
+
+    dx = x3-x1
+    dy = y3-y1
+    ds = np.sqrt(dx**2 + dy**2)
+    nx = dy / ds
+    ny = -dx / ds
+
+    xb = x2 + nx/ny * (y0-y2)
+    dists = np.sqrt((xb-x2)**2 + (y0-y2)**2)
+
+    # account for parallel lines
+    dists[ny == 0] = np.finfo('d').max
+
+    return dists
+
+def d_ndisty_dx1(x, y, y0):
+    """Calculate the derivative of ndisty with respect the the x coordinate of
+    the 'previous' point.
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of derivatives with length N-2 where N=len(x)
+    """
+    return -(y0 - y2)**2*(y1 - y3)**2/(sqrt((y0 - y2)**2*((x1 - x3)**2 + \
+            (y1 - y3)**2)/(x1 - x3)**2)*(x1 - x3)**3)
+
+def d_ndisty_dx2(x, y, y0):
+    """Calculate the derivative of ndisty with respect the the x coordinate of
+    the 'current' point.
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of derivatives with length N-2 where N=len(x)
+    """
+    return 0.0
+
+def d_ndisty_dx3(x, y, y0):
+    """Calculate the derivative of ndisty with respect the the x coordinate of
+    the 'next' point.
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of derivatives with length N-2 where N=len(x)
+    """
+    return (y0 - y2)**2*(y1 - y3)**2/(sqrt((y0 - y2)**2*((x1 - x3)**2 + \
+           (y1 - y3)**2)/(x1 - x3)**2)*(x1 - x3)**3)
+
+def d_ndisty_dy1(x, y, y0):
+    """Calculate the derivative of ndisty with respect the the y coordinate of
+    the 'previous' point.
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of derivatives with length N-2 where N=len(x)
+    """
+    return (y0 - y2)**2*(y1 - y3)/(sqrt((y0 - y2)**2*((x1 - x3)**2 + \
+           (y1 - y3)**2)/(x1 - x3)**2)*(x1 - x3)**2)
+
+def d_ndisty_dy2(x, y, y0):
+    """Calculate the derivative of ndisty with respect the the y coordinate of
+    the 'current' point.
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of derivatives with length N-2 where N=len(x)
+    """
+    return (-y0 + y2)*((x1 - x3)**2 + (y1 - y3)**2)/(sqrt((y0 - y2)**2 * \
+           ((x1 - x3)**2 + (y1 - y3)**2)/(x1 - x3)**2)*(x1 - x3)**2)
+
+def d_ndisty_dy3(x, y, y0):
+    """Calculate the derivative of ndisty with respect the the y coordinate of
+    the 'next' point.
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+
+    Returns
+    -------
+    np.array
+        List of derivatives with length N-2 where N=len(x)
+    """
+    return (y0 - y2)**2*(-y1 + y3)/(sqrt((y0 - y2)**2*((x1 - x3)**2 + \
+           (y1 - y3)**2)/(x1 - x3)**2)*(x1 - x3)**2)
+
+def ndisty_penalty(x, y, y0, dmin, delta_d, inds=None):
+    """Calculate a penalty function based on the minimum distance from each
+    point to a y coordinate.
+
+    This distance is calculated along the approximate normal direction of the
+    polygon at each point. A thresholding function is applied to the distance
+    in order to compare it to a minimum distance and hence determine a penalty
+    value.
+
+    This is useful as a simple approximate gap size constraint. For example, if
+    a device is symmetric about y=0, you can call this function with y0=0 to
+    penalize points which get too close to the y axis.
+
+    Notes
+    -----
+    This function assumes that the supplied indices are contiguous in
+    increasing order. In other words, indices must have the form
+    [i, i+1, i+2, i+3, i+4, ...].
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+    dmin : float
+        The minimum distance.
+    delta_d : float
+        The steepness of the threshold function.
+    inds : numpy.array (optional)
+        The set of indices of x,y for which the penalty is calculated. If None,
+        then the penalty will be calculated at all but the end points (default
+        = None)
+
+    Returns
+    -------
+    float
+        The value of the penalty.
+    """
+    if(inds == None):
+        inds = np.arange(1,len(x)-1)
+    else:
+        inds = np.array(inds)
+
+    indices = np.concatenate([inds[0:1]-1, inds, inds[-1:]+1])
+    xs = x[indices]
+    ys = y[indices]
+    ndist = ndisty(xs, ys, y0)
+
+    penalties = rect(ndist, dmin*2, delta_d)
+    return np.sum(penalties)
+
+def ndisty_penalty_derivative(x, y, y0, dmin, delta_d, inds=None):
+    """Calculate the derivative of ndisty_penalty with respect to the x and y
+    coordinates.
+
+    Notes
+    -----
+    This function assumes that the supplied indices are contiguous in
+    increasing order. In other words, indices must have the form
+    [i, i+1, i+2, i+3, i+4, ...].
+
+    Parameters
+    ---------
+    x : list or np.array
+        X coordinates of polygon
+    y : list or np.array
+        Y coordinates of polygon
+    y0 : float
+        The y position to which the distance is calculated.
+    dmin : float
+        The minimum distance.
+    delta_d : float
+        The steepness of the threshold function.
+    inds : numpy.array (optional)
+        The set of indices of x,y for which the penalty is calculated. If None,
+        then the penalty will be calculated at all but the end points (default
+        = None)
+
+    Returns
+    -------
+    numpy.ndarray, numpy.ndarray
+        The derivatives with respect to the x and y coordinates, respectively.
+    """
+    if(inds == None):
+        inds = np.arange(1,len(x)-1)
+    else:
+        inds = np.array(inds)
+
+def dist_to_edges(x1, x2, x3, y1, y2, y3, xe, ye):
+    """Calculate the signed distance to a set of edges.
+
+    Given a set of three points (x1, y1), (x2, y2), and (x3, y3) calculate the
+    distance from (x2, y2) to the edges defined by lists of coordinates xe and
+    ye. These distances typically correspond to gaps and bridges in a polygon.
+
+    Parameters
+    ----------
+    x1 : float
+        The x coordinate of the "previous" point
+    y1 : float
+        The y coordinate of the "previous" point
+    x2 : float
+        The x coordinate of the "current" point
+    y2 : float
+        The y coordinate of the "current" point
+    x3 : float
+        The x coordinate of the "next" point
+    y3 : float
+        The y coordinate of the "next" point
+    xe : float
+        The list of x coordinates which define a polygon
+    ye: float
+        The list of y coordinates which define a polygon
+
+    Returns
+    -------
+    np.array
+        The list of signed distances from point (x2, y2) to the edges defined
+        by xe and ye. The number of distances will be equal to the number of
+        edges in the polygon.
+    np.array
+        Parameters used to define edge lines. An intersection with an edge
+        occurs when these parameters are between 0 and 1
+    """
+    ## Get the normal direction
+    dx = x3-x1
+    dy = y3-y1
+    ds = np.sqrt(dx**2 + dy**2)
+    nx = -dy / ds
+    ny = dx / ds
+
+    ## Loop through the edges and check for intersections
+    dists = []
+    us = []
+    Ne = len(xe) - 1
+    for j in range(Ne):
+        xj0 = xe[j]; xj1 = xe[j+1]
+        yj0 = ye[j]; yj1 = ye[j+1]
+
+        dx = xj1 - xj0
+        dy = yj1 - yj0
+
+        ## check for parallel lines
+        if(dy*nx - dx*ny == 0.0):
+            return np.array([]), np.array([])
+
+        t = (dx*(y2-yj0) - dy*(x2-xj0)) / (dy*nx - dx*ny)
+        u = (nx*(yj0-y2) - ny*(xj0-x2)) / (ny*dx - nx*dy)
+
+        xu = dx*u + xj0
+        yu = dy*u + yj0
+
+        dist = np.sqrt((xu-x2)**2 + (yu-y2)**2)
+
+        ## sign the distance based on sign(t)
+        # this can tell us if we have a bridge or gap
+        dist *= np.sign(t)
+
+        dists.append(dist)
+        us.append(u)
+
+    return np.array(dists), np.array(us)
+
+
+#####################################################################################
+# Mode Match
+#####################################################################################
+
+
+class ModeMatch(object):
     """Compute the mode match between two sets of electromagnetic fields.
 
     The mode match is essentially a projection of one set of fields onto a
@@ -480,6 +1124,10 @@ class ModeMatch:
         ds = self.ds1*self.ds2
         return 1/4.0 * ds * np.real(self.Pm) * (np.conj(self.Eym)*self.x_dot_s - np.conj(self.Exm)*self.y_dot_s) * np.conj(self.am)/np.conj(self.Pm)
 
+#####################################################################################
+# Functions of handling interpolated fields
+#####################################################################################
+
 def interpolated_dFdx_2D(sim, dFdEzi, dFdHxi, dFdHyi):
     """Account for interpolated fields in a 'naive' derivative of a figure of
     merit.
@@ -706,6 +1354,9 @@ def interpolated_dFdx_3D(sim, domain, dFdExi, dFdEyi, dFdEzi, dFdHxi, dFdHyi, dF
 
     return domain, dFdEx, dFdEy, dFdEz, dFdHx, dFdHy, dFdHz
 
+#####################################################################################
+# Functions of handling power normalization
+#####################################################################################
 
 def power_norm_dFdx_TE(sim, f, dfdEz, dfdHx, dfdHy):
     """Compute the derivative of a figure of merit which has power
@@ -974,8 +1625,9 @@ def power_norm_dFdx_3D(sim, f, domain, dfdEx, dfdEy, dfdEz, dfdHx, dfdHy, dfdHz)
     adj_domains = []
 
     if(NOT_PARALLEL):
-        dfdEH = interpolated_dFdx_3D(sim, domain, dfdEx, dfdEy, dfdEz,
-                                     dfdHx, dfdHy, dfdHz)
+        dfdEH = interpolated_dFdx_3D(sim, domain,
+                                     dfdEx/Psrc, dfdEy/Psrc, dfdEz/Psrc,
+                                     dfdHx/Psrc, dfdHy/Psrc, dfdHz/Psrc)
         adj_sources.append(dfdEH[1:]); adj_domains.append(dfdEH[0])
 
     # setup the domains that are needed to get the power flux
