@@ -484,6 +484,264 @@ class DomainCoordinates(object):
 
         return domain
 
+class DomainCoordinates2D(object):
+    """Define a domain coordinate.
+
+    A DomainCoordinate is a class which manages accessing data on a rectangular
+    grid. It stores both the indexed positions and real-space coordinates of a
+    desired line, plane, or volume.
+
+    Attributes
+    ----------
+    x : numpy.ndarray
+        The real-space x coordinates of the domain
+    y : numpy.ndarray
+        The real-space y coordinates of the domain
+    z : numpy.ndarray
+        The real-space z coordinates of the domain
+    i : slice
+        The slice along the z direction
+    j : slice
+        The slice along the y direction
+    k : numpy.ndarray
+        The slice along the x direction
+    Nx : int
+        The number of x indices in the domain
+    Ny : int
+        The number of y indices in the domain
+    Nz : int
+        The number of z indices in the domain
+    xspan : float
+        The physical size of the domain in the x direction
+    yspan : float
+        The physical size of the domain in the y direction
+    zspan : float
+        The physical size of the domain in the z direction
+    dx : float
+        The grid spacing in x direction
+    dy : float
+        The grid spacing in y direction
+    dz : float
+        The grid spacing in z direction
+    shape : (int, int, int)
+        The shape of the domain.
+    """
+
+    def __init__(self, xmin, xmax, ymin, ymax, dx, dy):
+        j1 = int(ymin/dy)
+        j2 = int(ymax/dy)+1
+
+        k1 = int(xmin/dx)
+        k2 = int(xmax/dx)+1
+
+        self.set_region(k1, k2, j1, j2, dx, dy)
+
+
+    def set_region(self, k1, k2, j1, j2, dx, dy):
+        """Set the region contained within the DomainCoordinates.
+
+        Parameters
+        ----------
+        k1 : int
+            The minimum x index.
+        k2 : int
+            The maximum x index.
+        j1 : int
+            The minimum y index.
+        j2 : int
+            The maximum y index.
+        i1 : int
+            The minimum z index.
+        i2 : int
+            The maximum z index.
+        dx : float
+            The grid spacing along x
+        dy : float
+            The grid spacing along y
+        dz : float
+            The grid spacing along z
+        """
+
+        jlist = np.arange(j1, j2, 1, dtype=np.int)
+        self._y = dy * jlist.astype(np.double)
+        self._j = slice(j1, j2)
+
+        klist = np.arange(k1, k2, 1, dtype=np.int)
+        self._x = dx * klist.astype(np.double)
+        self._k = slice(k1, k2)
+
+        self._Nx = k2 - k1
+        self._Ny = j2 - j1
+
+        self._xspan = dx * (self._Nx-1)
+        self._yspan = dy * (self._Ny-1)
+
+        self._dx = dx
+        self._dy = dy
+
+        self.j1 = j1
+        self.j2 = j2
+        self.k1 = k1
+        self.k2 = k2
+
+    @property
+    def x(self):
+        return self._x
+
+    @property
+    def y(self):
+        return self._y
+
+    @property
+    def z(self):
+        return self._z
+
+    @x.setter
+    def x(self, value):
+        warning_message('x cannot be reassigned in this way.', 'emopt.misc')
+
+    @y.setter
+    def y(self, value):
+        warning_message('y cannot be reassigned in this way.', 'emopt.misc')
+
+    @property
+    def j(self):
+        return self._j
+
+    @property
+    def k(self):
+        return self._k
+
+    @j.setter
+    def j(self, value):
+        warning_message('j cannot be reassigned in this way.', 'emopt.misc')
+
+    @k.setter
+    def k(self, value):
+        warning_message('k cannot be reassigned in this way.', 'emopt.misc')
+
+    @property
+    def Nx(self):
+        return self._Nx
+
+    @property
+    def Ny(self):
+        return self._Ny
+
+    @Nx.setter
+    def Nx(self, value):
+        warning_message('Nx cannot be reassigned in this way.', 'emopt.misc')
+
+    @Ny.setter
+    def Ny(self, value):
+        warning_message('Ny cannot be reassigned in this way.', 'emopt.misc')
+
+    @property
+    def xspan(self):
+        return self._xspan
+
+    @property
+    def yspan(self):
+        return self._yspan
+
+    @xspan.setter
+    def xspan(self, value):
+        warning_message('xspan cannot be reassigned in this way.', 'emopt.misc')
+
+    @yspan.setter
+    def yspan(self, value):
+        warning_message('yspan cannot be reassigned in this way.', 'emopt.misc')
+
+    @property
+    def dx(self):
+        return self._dx
+
+    @property
+    def dy(self):
+        return self._dy
+
+    def dx(self, value):
+        warning_message('dx cannot be reassigned in this way.', 'emopt.misc')
+
+    @dy.setter
+    def dy(self, value):
+        warning_message('dy cannot be reassigned in this way.', 'emopt.misc')
+
+    @property
+    def shape(self):
+        return (self._Ny, self._Nx)
+
+    def get_bounding_box(self):
+        return [np.min(self._x), np.max(self._x), np.min(self._y),
+                np.max(self._y),]
+
+    def contains_index(self, k, j):
+        return (k >= self.k1 and k < self.k2) and \
+               (j >= self.j1 and j < self.j2) and \
+
+    def grow(self, x1, x2, y1, y2):
+        """Grow the size of DomainCoordinates in each direction by a specified
+        number of grid cells.
+
+        Notes
+        -----
+        If the input values are negative, the region will shrink! Use this with
+        caution as we do not error check.
+
+        Parameters
+        ----------
+        x1 : int
+            The number of grid cells to grow in the -x direction
+        x2 :int
+            The number of grid cells to grow in the +x direction
+        y1 : int
+            The number of grid cells to grow in the -y direction
+        y2 :int
+            The number of grid cells to grow in the +y direction
+        z1 : int
+            The number of grid cells to grow in the -z direction
+        z2 :int
+            The number of grid cells to grow in the +z direction
+        """
+        k1 = self.k1 - x1; k2 = self.k2 + x2
+        j1 = self.j1 - y1; j2 = self.j2 + y2
+
+        self.set_region(k1, k2, j1, j2, self._dx, self._dy)
+
+    def copy(self):
+        """Copy the domain.
+
+        Returns
+        -------
+        DomainCoordinates
+            A new DomainCoordinates object with the exact same dimensions as
+            this one.
+        """
+        # useless values
+        domain = DomainCoordinates2D(0, 1, 0, 1, 1, 1)
+
+        # copy all of the values of the instance variables
+        domain._y = self._y
+        domain._j = self._j
+
+        domain._x = self._x
+        domain._k = self._k
+
+        domain._Nx = self._Nx
+        domain._Ny = self._Ny
+
+        domain._xspan = self._xspan
+        domain._yspan = self._yspan
+
+        domain._dx = self._dx
+        domain._dy = self._dy
+
+        domain.j1 = self.j1
+        domain.j2 = self.j2
+        domain.k1 = self.k1
+        domain.k2 = self.k2
+
+        return domain
 
 ####################################################################################
 # Define a MathDummy
