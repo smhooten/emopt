@@ -38,7 +38,7 @@ libFDTD.FDTD_TE_set_grid_dims.argtypes = [c_void_p, c_int, c_int]
 libFDTD.FDTD_TE_set_grid_dims.restype = None
 
 libFDTD.FDTD_TE_set_local_grid.argtypes = [c_void_p,
-                                           c_int, c_int
+                                           c_int, c_int,
                                            c_int, c_int]
 libFDTD.FDTD_TE_set_local_grid.restype = None
 

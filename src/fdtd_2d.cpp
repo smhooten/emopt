@@ -110,10 +110,10 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
            ody = _R/_dy,
            b, C, kappa,
            src_t,
-           dt_by_mux, dt_by_muy,
+           dt_by_mux, dt_by_muy;
 
     int pml_xmin = _w_pml_x0, pml_xmax = _Nx-_w_pml_x1,
-        pml_ymin = _w_pml_y0, pml_ymax = _Ny-_w_pml_y1,
+        pml_ymin = _w_pml_y0, pml_ymax = _Ny-_w_pml_y1;
 
     int ind_jk, ind_jp1k, ind_jkp1, ind_global,
         ind_pml, ind_src, j0s, k0s, Js, Ks,
@@ -125,7 +125,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
     // Setup the fields on the simulation boundary based on the boundary conditions
     if(_bc[0] != 'P' && _k0 + _K == _Nx){
         for(int j = 0; j < _J; j++) {
-            ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + _K + 1;
+            // ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + _K + 1;
+            ind_jk = (j+1)*(_K+2) + _K + 1;
 
             _Ez[ind_jk] = 0.0;
         }
@@ -133,7 +134,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
 
     if(_bc[1] != 'P' && _j0 + _J == _Ny){
         for(int k = 0; k < _K; k++) {
-            ind_jk = (_J+2)*(_K+2) + (_J+1)*(_K+2) + k + 1;
+            // ind_jk = (_J+2)*(_K+2) + (_J+1)*(_K+2) + k + 1;
+            ind_jk = (_J+1)*(_K+2) + k + 1;
 
             _Ez[ind_jk] = 0.0;
         }
@@ -141,11 +143,17 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
-            ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
-            ind_jp1k = (_J+2)*(_K+2) + (j+2)*(_K+2) + k + 1;
-            ind_jkp1 = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 2;
+            //ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_jp1k = (_J+2)*(_K+2) + (j+2)*(_K+2) + k + 1;
+            //ind_jkp1 = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 2;
 
-            ind_global = _J*_K + j*_K + k;
+            //ind_global = _J*_K + j*_K + k;
+ 
+            ind_jk = (j+1)*(_K+2) + k + 1;
+            ind_jp1k = (j+2)*(_K+2) + k + 1;
+            ind_jkp1 = (j+1)*(_K+2) + k + 2;
+
+            ind_global = j*_K + k;
 
             // compute prefactors
             dt_by_mux = _dt/_mu_x[ind_global].real;
@@ -155,7 +163,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             dEzdy = ody*(_Ez[ind_jp1k] - _Ez[ind_jk]);
 
             _Hx[ind_jk] = _Hx[ind_jk] +  dt_by_mux * 
-                           (dEydz);
+                           (-1*dEzdy);
 
             // update Hy
             dEzdx = odx * (_Ez[ind_jkp1] - _Ez[ind_jk]);
@@ -166,7 +174,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             // Do PML updates
             if(k + _k0 < pml_xmin) {
                 // get index in PML array
-                ind_pml = _J*(pml_xmin - _k0) + j*(pml_xmin - _k0) + k;
+                //ind_pml = _J*(pml_xmin - _k0) + j*(pml_xmin - _k0) + k;
+                ind_pml = j*(pml_xmin - _k0) + k;
 
                 // get PML coefficients
                 ind_pml_param = pml_xmin - k - _k0 - 1;
@@ -181,7 +190,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             
             }
             else if(k + _k0 >= pml_xmax) {
-                ind_pml = _J*(_k0 + _K - pml_xmax) + j*(_k0 + _K - pml_xmax) + k + _k0 - pml_xmax;
+                //ind_pml = _J*(_k0 + _K - pml_xmax) + j*(_k0 + _K - pml_xmax) + k + _k0 - pml_xmax;
+                ind_pml = j*(_k0 + _K - pml_xmax) + k + _k0 - pml_xmax;
 
                 // get pml coefficients
                 ind_pml_param = k+_k0 - pml_xmax + _w_pml_x0;
@@ -195,6 +205,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             }
 
             if(j + _j0 < pml_ymin) {
+                //ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
                 ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
 
                 // compute coefficients
@@ -208,7 +219,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
                 _Hx[ind_jk] = _Hx[ind_jk] - dt_by_mux * (_pml_Ezy0[ind_pml]-dEzdy+dEzdy/kappa);
             }
             else if(j + _j0 >= pml_ymax) {
-                ind_pml = (_j0 + _J - pml_ymax)*_K +(_j0 + j - pml_ymax)*_K + k;
+                // ind_pml = (_j0 + _J - pml_ymax)*_K +(_j0 + j - pml_ymax)*_K + k;
+                ind_pml = (_j0 + j - pml_ymax)*_K + k;
 
                 // compute coefficients
                 ind_pml_param = j+_j0 - pml_ymax + _w_pml_y0;
@@ -234,9 +246,13 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
 
         for(int j = 0; j < Js; j++) {
             for(int k = 0; k < Ks; k++) {
-                ind_jk = (_J+2)*(_K+2) + (j+j0s+1)*(_K+2) + k + k0s + 1;
-                ind_global = _J*_K + (j+j0s)*_K + k+k0s;
-                ind_src = Js*Ks + j*Ks + k;
+                // ind_jk = (_J+2)*(_K+2) + (j+j0s+1)*(_K+2) + k + k0s + 1;
+                // ind_global = _J*_K + (j+j0s)*_K + k+k0s;
+                // ind_src = Js*Ks + j*Ks + k;
+
+                ind_jk = (j+j0s+1)*(_K+2) + k + k0s + 1;
+                ind_global = (j+j0s)*_K + k+k0s;
+                ind_src = j*Ks + k;
                 
                 src_t = src_func_t(n, t, Mx[ind_src].imag);
                 _Hx[ind_jk] = _Hx[ind_jk] + src_t * Mx[ind_src].real * _dt / _mu_x[ind_global].real;                   
@@ -248,9 +264,13 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
 
         for(int j = 0; j < Js; j++) {
             for(int k = 0; k < Ks; k++) {
-                ind_jk = (_J+2)*(_K+2) + (j+j0s+1)*(_K+2) + k + k0s + 1;
-                ind_global = _J*_K + (j+j0s)*_K + k+k0s;
-                ind_src = Js*Ks + j*Ks + k;
+                // ind_jk = (_J+2)*(_K+2) + (j+j0s+1)*(_K+2) + k + k0s + 1;
+                // ind_global = _J*_K + (j+j0s)*_K + k+k0s;
+                // ind_src = Js*Ks + j*Ks + k;
+
+                ind_jk = (j+j0s+1)*(_K+2) + k + k0s + 1;
+                ind_global = (j+j0s)*_K + k+k0s;
+                ind_src = j*Ks + k;
                 
                 src_t = src_func_t(n, t, My[ind_src].imag);
                 _Hy[ind_jk] = _Hy[ind_jk] + src_t * My[ind_src].real * _dt / _mu_y[ind_global].real;                   
@@ -275,7 +295,7 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
 #endif
 
     int pml_xmin = _w_pml_x0, pml_xmax = _Nx-_w_pml_x1,
-        pml_ymin = _w_pml_y0, pml_ymax = _Ny-_w_pml_y1,
+        pml_ymin = _w_pml_y0, pml_ymax = _Ny-_w_pml_y1;
 
     int ind_jk, ind_jm1k, ind_jkm1, ind_global,
         ind_pml, ind_src, j0s, k0s, Js, Ks,
@@ -283,30 +303,35 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
 
     int ind_jkp1, ind_jp1k;  // used for setting boundary values
 
-    double dHxdy, dHxdz, dHydx, dHydz;
+    double dHxdy, dHydx;
     complex128 *Jz;
 
     // Setup the fields on the simulation boundary based on the boundary conditions
     if(_k0 == 0){
         if(_bc[0] == '0') {
             for(int j = 0; j < _J; j++) {
-                ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2);
+                // ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2);
+                ind_jk = (j+1)*(_K+2);
 
                 _Hy[ind_jk] = 0.0;
             }
         }
         else if(_bc[0] == 'E') {
             for(int j = 0; j < _J; j++) {
-                ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2);
-                ind_jkp1 = (_J+2)*(_K+2) + (j+1)*(_K+2)+1;
+                //ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2);
+                //ind_jkp1 = (_J+2)*(_K+2) + (j+1)*(_K+2)+1;
+                ind_jk = (j+1)*(_K+2);
+                ind_jkp1 = (j+1)*(_K+2)+1;
 
                 _Hy[ind_jk] = -1*_Hy[ind_jkp1];
             }
         }
         else if(_bc[0] == 'H') {
             for(int j = 0; j < _J; j++) {
-                ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2);
-                ind_jkp1 = (_J+2)*(_K+2) + (j+1)*(_K+2)+1;
+                //ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2);
+                //ind_jkp1 = (_J+2)*(_K+2) + (j+1)*(_K+2)+1;
+                ind_jk = (j+1)*(_K+2);
+                ind_jkp1 = (j+1)*(_K+2)+1;
 
                 _Hy[ind_jk] = _Hy[ind_jkp1];
             }
@@ -316,7 +341,8 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
     if(_j0 == 0){
         if(_bc[1] == '0') {
             for(int k = 0; k < _K; k++) {
-                ind_jk = (_J+2)*(_K+2) + 0*(_K+2) + k + 1;
+                //ind_jk = (_J+2)*(_K+2) + 0*(_K+2) + k + 1;
+                ind_jk = 0*(_K+2) + k + 1;
 
                 _Hx[ind_jk] = 0.0;
             }
@@ -324,16 +350,20 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
         }
         else if(_bc[1] == 'E') {
             for(int k = 0; k < _K; k++) {
-                ind_jk = (_J+2)*(_K+2) + 0*(_K+2) + k + 1;
-                ind_jp1k = (_J+2)*(_K+2) + 1*(_K+2) + k + 1;
+                //ind_jk = (_J+2)*(_K+2) + 0*(_K+2) + k + 1;
+                //ind_jp1k = (_J+2)*(_K+2) + 1*(_K+2) + k + 1;
+                ind_jk = 0*(_K+2) + k + 1;
+                ind_jp1k = 1*(_K+2) + k + 1;
 
                 _Hx[ind_jk] = -1*_Hx[ind_jp1k];
             }
         }
         else if(_bc[1] == 'H') {
             for(int k = 0; k < _K; k++) {
-                ind_jk = (_J+2)*(_K+2) + 0*(_K+2) + k + 1;
-                ind_jp1k = (_J+2)*(_K+2) + 1*(_K+2) + k + 1;
+                //ind_jk = (_J+2)*(_K+2) + 0*(_K+2) + k + 1;
+                //ind_jp1k = (_J+2)*(_K+2) + 1*(_K+2) + k + 1;
+                ind_jk = 0*(_K+2) + k + 1;
+                ind_jp1k = 1*(_K+2) + k + 1;
 
                 _Hx[ind_jk] = _Hx[ind_jp1k];
             }
@@ -343,9 +373,15 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
-            ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
-            ind_jm1k = (_J+2)*(_K+2) + (j)*(_K+2) + k + 1;
-            ind_jkm1 = (_J+2)*(_K+2) + (j+1)*(_K+2) + k;
+            //ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_jm1k = (_J+2)*(_K+2) + (j)*(_K+2) + k + 1;
+            //ind_jkm1 = (_J+2)*(_K+2) + (j+1)*(_K+2) + k;
+
+            //ind_global = j*_K + k;
+
+            ind_jk = (j+1)*(_K+2) + k + 1;
+            ind_jm1k = (j)*(_K+2) + k + 1;
+            ind_jkm1 = (j+1)*(_K+2) + k;
 
             ind_global = j*_K + k;
 
@@ -452,8 +488,12 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
 
         for(int j = 0; j < Js; j++) {
             for(int k = 0; k < Ks; k++) {
-                ind_jk = (_J+2)*(_K+2) + (j+j0s+1)*(_K+2) + k + k0s + 1;
-                ind_global = _J*_K + (j+j0s)*_K + k+k0s;
+                //ind_jk = (_J+2)*(_K+2) + (j+j0s+1)*(_K+2) + k + k0s + 1;
+                //ind_global = _J*_K + (j+j0s)*_K + k+k0s;
+                //ind_src = j*Ks + k;
+
+                ind_jk = (j+j0s+1)*(_K+2) + k + k0s + 1;
+                ind_global = (j+j0s)*_K + k+k0s;
                 ind_src = j*Ks + k;
                 
 #ifdef COMPLEX_EPS
@@ -498,7 +538,7 @@ void fdtd_2d::FDTD_TE::build_pml()
 {
     int N,
         xmin = _w_pml_x0, xmax = _Nx-_w_pml_x1,
-        ymin = _w_pml_y0, ymax = _Ny-_w_pml_y1,
+        ymin = _w_pml_y0, ymax = _Ny-_w_pml_y1;
 
     // touches xmin boudary
     if(_k0 < xmin) {
@@ -555,7 +595,7 @@ void fdtd_2d::FDTD_TE::reset_pml()
 {
     int N,
         xmin = _w_pml_x0, xmax = _Nx-_w_pml_x1,
-        ymin = _w_pml_y0, ymax = _Ny-_w_pml_y1,
+        ymin = _w_pml_y0, ymax = _Ny-_w_pml_y1;
 
     // touches xmin boudary
     if(_k0 < xmin) {
@@ -780,8 +820,10 @@ void fdtd_2d::FDTD_TE::capture_t0_fields()
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
-            ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
-            ind_global = _J*_K + j*_K + k;
+            //ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_global = _J*_K + j*_K + k;
+            ind_local = (j+1)*(_K+2) + k + 1;
+            ind_global = j*_K + k;
 
             // Copy the fields at the current time to the auxillary arrays
             _Ez_t0[ind_global] = _Ez[ind_local];
@@ -799,8 +841,10 @@ void fdtd_2d::FDTD_TE::capture_t1_fields()
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
-            ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
-            ind_global = _J*_K + j*_K + k;
+            //ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_global = _J*_K + j*_K + k;
+            ind_local = (j+1)*(_K+2) + k + 1;
+            ind_global = j*_K + k;
 
             // Copy the fields at the current time to the auxillary arrays
             _Ez_t1[ind_global] = _Ez[ind_local];
@@ -822,8 +866,10 @@ void fdtd_2d::FDTD_TE::calc_complex_fields(double t0, double t1)
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
-            ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
-            ind_global = _J*_K + j*_K + k;
+            //ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_global = _J*_K + j*_K + k;
+            ind_local = (j+1)*(_K+2) + k + 1;
+            ind_global = j*_K + k;
             
             // Compute amplitude and phase for Ez
             // Note: we are careful to assume exp(-i*w*t) time dependence
@@ -879,8 +925,10 @@ void fdtd_2d::FDTD_TE::calc_complex_fields(double t0, double t1, double t2)
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
-            ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
-            ind_global = _J*_K + j*_K + k;
+            //ind_local = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_global = _J*_K + j*_K + k;
+            ind_local = (j+1)*(_K+2) + k + 1;
+            ind_global = j*_K + k;
 
             // Compute amplitude and phase for Ez
             // Note: we are careful to assume exp(-i*w*t) time dependence
@@ -1003,7 +1051,8 @@ void fdtd_2d::FDTD_TE::add_source(complex128 *Jz,
 
     for(int j = 0; j < J; j++) {
         for(int k = 0; k < K; k++) {
-            ind = J*K + j*K + k;
+            // ind = J*K + j*K + k; #EDIT
+            ind = j*K + k;
 
 
             // Jz
@@ -1097,7 +1146,7 @@ void FDTD_TE_set_grid_dims(fdtd_2d::FDTD_TE* fdtd_TE, int Nx, int Ny)
 }
 
 void FDTD_TE_set_local_grid(fdtd_2d::FDTD_TE* fdtd_TE, 
-                         int k0, int j0
+                         int k0, int j0,
                          int K, int J)
 {
     fdtd_TE->set_local_grid(k0, j0, K, J);
@@ -1251,7 +1300,8 @@ void FDTD_TE_copy_to_ghost_comm(double* src, complex128* ghost, int J, int K)
 
     // copy xmin
     for(int j = 0; j < J; j++) {
-        ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + 1;
+        //ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + 1;
+        ind_jk = (j+1)*(K+2) + 1;
         ind_ghost = nstart + j; 
 
         ghost[ind_ghost] = src[ind_jk];
@@ -1260,7 +1310,8 @@ void FDTD_TE_copy_to_ghost_comm(double* src, complex128* ghost, int J, int K)
     // copy xmax
     nstart = J;
     for(int j = 0; j < J; j++) {
-        ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + K;
+        //ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + K;
+        ind_jk = (j+1)*(K+2) + K;
         ind_ghost = nstart + j;
 
         ghost[ind_ghost] = src[ind_jk];
@@ -1269,7 +1320,8 @@ void FDTD_TE_copy_to_ghost_comm(double* src, complex128* ghost, int J, int K)
     // copy ymin
     nstart = 2*J;
     for(int k = 0; k < K; k++) {
-        ind_jk = (J+2)*(K+2) + 1*(K+2) + k + 1;
+        //ind_jk = (J+2)*(K+2) + 1*(K+2) + k + 1;
+        ind_jk = 1*(K+2) + k + 1;
         ind_ghost = nstart + k;
 
         ghost[ind_ghost] = src[ind_jk];
@@ -1278,7 +1330,8 @@ void FDTD_TE_copy_to_ghost_comm(double* src, complex128* ghost, int J, int K)
     // copy ymax
     nstart = 2*J + K;
     for(int k = 0; k < K; k++) {
-        ind_jk = (J+2)*(K+2) + J*(K+2) + k + 1;
+        //ind_jk = (J+2)*(K+2) + J*(K+2) + k + 1;
+        ind_jk = J*(K+2) + k + 1;
         ind_ghost = nstart + k;
 
         ghost[ind_ghost] = src[ind_jk];
@@ -1288,12 +1341,13 @@ void FDTD_TE_copy_to_ghost_comm(double* src, complex128* ghost, int J, int K)
 
 void FDTD_TE_copy_from_ghost_comm(double* dest, complex128* ghost, int J, int K)
 {
-    unsigned int nstart = 2*J + 2*K.
+    unsigned int nstart = 2*J + 2*K,
                  ind_jk, ind_ghost;
 
     // copy xmin
     for(int j = 0; j < J; j++) {
-        ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + 0;
+        //ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + 0;
+        ind_jk = (j+1)*(K+2) + 0;
         ind_ghost = nstart + j;
 
         dest[ind_jk] = ghost[ind_ghost].real;
@@ -1302,7 +1356,8 @@ void FDTD_TE_copy_from_ghost_comm(double* dest, complex128* ghost, int J, int K)
     // copy xmax
     nstart = 2*J + 2*K + J;
     for(int j = 0; j < J; j++) {
-        ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + K+1;
+        //ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + K+1;
+        ind_jk = (j+1)*(K+2) + K+1;
         ind_ghost = nstart + j;
 
         dest[ind_jk] = ghost[ind_ghost].real;
@@ -1311,7 +1366,8 @@ void FDTD_TE_copy_from_ghost_comm(double* dest, complex128* ghost, int J, int K)
     // copy ymin
     nstart = 2*J + 2*K + 2*J;
     for(int k = 0; k < K; k++) {
-        ind_jk = (J+2)*(K+2) + 0*(K+2) + k + 1;
+        //ind_jk = (J+2)*(K+2) + 0*(K+2) + k + 1;
+        ind_jk = 0*(K+2) + k + 1;
         ind_ghost = nstart + k;
 
         dest[ind_jk] = ghost[ind_ghost].real;
@@ -1320,7 +1376,8 @@ void FDTD_TE_copy_from_ghost_comm(double* dest, complex128* ghost, int J, int K)
     // copy ymax
     nstart = 2*J + 2*K + 2*J + K;
     for(int k = 0; k < K; k++) {
-        ind_jk = (J+2)*(K+2) + (J+1)*(K+2) + k + 1;
+        //ind_jk = (J+2)*(K+2) + (J+1)*(K+2) + k + 1;
+        ind_jk = (J+1)*(K+2) + k + 1;
         ind_ghost = nstart + k;
 
         dest[ind_jk] = ghost[ind_ghost].real;

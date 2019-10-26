@@ -628,7 +628,7 @@ extern "C" {
         // Source management
         void FDTD_TE_add_source(fdtd_2d::FDTD_TE* fdtd_TE,
                              complex128 *Jz,
-                             complex128 *Mx, complex128 *My
+                             complex128 *Mx, complex128 *My,
                              int j0, int k0, int J, int K,
                              bool calc_phase);
         void FDTD_TE_clear_sources(fdtd_2d::FDTD_TE* fdtd_TE);

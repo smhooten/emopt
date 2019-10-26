@@ -35,8 +35,8 @@ spacing than the FDFD example.
 """
 
 import emopt
-from emopt.misc import NOT_PARALLEL, run_on_master
-from emopt.adjoint_method import AdjointMethodPNF3D
+from emopt.misc import NOT_PARALLEL, run_on_master, MathDummy
+from emopt.adjoint_method import AdjointMethodPNF2D
 
 import numpy as np
 from math import pi
@@ -44,7 +44,9 @@ from math import pi
 from petsc4py import PETSc
 from mpi4py import MPI
 
-class MMISplitterAdjointMethod(AdjointMethodPNF3D):
+import time
+
+class MMISplitterAdjointMethod(AdjointMethodPNF2D):
     """Define a figure of merit and its derivative for adjoint sensitivity
     analysis.
 
@@ -82,9 +84,9 @@ class MMISplitterAdjointMethod(AdjointMethodPNF3D):
         The FOM is the mode overlap between the simulated fields and the
         fundamental super mode of the output waveguides.
         """
-        Ex, Ey, Ez, Hx, Hy, Hz = sim.saved_fields[0]
+        Ez, Hx, Hy = sim.saved_fields[0]
 
-        self.mode_match.compute(Ex, Ey, Ez, Hx, Hy, Hz)
+        self.mode_match.compute(Ez=Ez, Hx=Hx, Hy=Hy)
         fom = -1*self.mode_match.get_mode_match_forward(1.0)
 
         return fom
@@ -103,15 +105,19 @@ class MMISplitterAdjointMethod(AdjointMethodPNF3D):
         the source power.
         """
         Psrc = sim.source_power
+        Ez, Hx, Hy = sim.saved_fields[0]
+        self.mode_match.compute(Ez=Ez, Hx=Hx, Hy=Hy)
 
-        dfdEx = -1*self.mode_match.get_dFdEx()
-        dfdEy = -1*self.mode_match.get_dFdEy()
-        dfdEz = -1*self.mode_match.get_dFdEz()
-        dfdHx = -1*self.mode_match.get_dFdHx()
-        dfdHy = -1*self.mode_match.get_dFdHy()
-        dfdHz = -1*self.mode_match.get_dFdHz()
+        if(NOT_PARALLEL):
+            dfdEz = -1*self.mode_match.get_dFdEz()
+            dfdHx = -1*self.mode_match.get_dFdHx()
+            dfdHy = -1*self.mode_match.get_dFdHy()
+        else:
+            dfdEz = None 
+            dfdHx = None 
+            dfdHy = None 
 
-        return [(dfdEx, dfdEy, dfdEz, dfdHx, dfdHy, dfdHz)]
+        return [(dfdEz, dfdHx, dfdHy)]
 
     def get_fom_domains(self):
         """We must return the DomainCoordinates object that corresponds to our
@@ -129,11 +135,9 @@ class MMISplitterAdjointMethod(AdjointMethodPNF3D):
 # Simulation parameters
 ####################################################################################
 X = 5.0   # simulation size along x
-Y = 4.0/2 # simulation size along y
-Z = 2.5   # simulation size along z
-dx = 0.04 # grid spacing along x
-dy = 0.04 # grid spacing along y
-dz = 0.04 # grid spacing along z
+Y = 4.0 # simulation size along y
+dx = 0.02 # grid spacing along x
+dy = 0.02 # grid spacing along y
 
 wavelength = 1.55
 
@@ -142,22 +146,24 @@ wavelength = 1.55
 #####################################################################################
 # Setup the simulation--rtol tells the iterative solver when to stop. 5e-5
 # yields reasonably accurate results/gradients
-sim = emopt.fdtd.FDTD(X,Y,Z,dx,dy,dz,wavelength, rtol=1e-5, min_rindex=1.44,
+sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-3, min_rindex=1.44,
                       nconv=200)
-sim.Nmax = 1000*sim.Ncycle
+sim.Nmax = 100*sim.Ncycle
 w_pml = dx * 15 # set the PML width
 
 # we use symmetry boundary conditions at y=0 to speed things up. We
 # need to make sure to set the PML width at the minimum y boundary is set to
 # zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
 # :(
-sim.w_pml = [w_pml, w_pml, 0, w_pml, w_pml, w_pml]
-sim.bc = '0H0'
+sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
+sim.bc = '00'
 
 # get actual simulation dimensions
 X = sim.X
 Y = sim.Y
-Z = sim.Z
+
+if NOT_PARALLEL:
+	print X, Y
 
 #####################################################################################
 # Define the geometry/materials
@@ -181,13 +187,13 @@ mmi.material_value = 3.45**2
 wg_out.material_value = 3.45**2
 rbg.material_value = 1.444**2
 
-eps = emopt.grid.StructuredMaterial3D(X, Y, Z, dx, dy, dz)
-eps.add_primitive(wg_in,  Z/2-h_si/2, Z/2+h_si/2)
-eps.add_primitive(mmi,    Z/2-h_si/2, Z/2+h_si/2)
-eps.add_primitive(wg_out, Z/2-h_si/2, Z/2+h_si/2)
-eps.add_primitive(rbg,   -Z, 2*Z)
+eps = emopt.grid.StructuredMaterial2D(X, Y, dx, dy)
+eps.add_primitive(wg_in)
+eps.add_primitive(mmi)
+eps.add_primitive(wg_out)
+eps.add_primitive(rbg)
 
-mu = emopt.grid.ConstantMaterial3D(1.0)
+mu = emopt.grid.ConstantMaterial2D(1.0)
 
 # Set the materials and build the system
 sim.set_materials(eps, mu)
@@ -197,18 +203,23 @@ sim.build()
 # Setup the sources
 #####################################################################################
 # We excite the system by injecting the fundamental mode of the input waveguide
-input_slice = emopt.misc.DomainCoordinates(16*dx, 16*dx, 0, Y-w_pml, w_pml, Z-w_pml, dx, dy, dz)
+input_slice = emopt.misc.DomainCoordinates(16*dx, 16*dx, w_pml, Y-w_pml, 0, 0, dx, dy, 1.0)
 
-mode = emopt.modes.ModeFullVector(wavelength, eps, mu, input_slice, n0=3.45,
+mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
                                    neigs=4)
 
 # The mode boundary conditions should match the simulation boundary conditins.
 # Mode is in the y-z plane, so the boundary conditions are HE
-mode.bc = 'H0'
+
+
+
+mode.bc = '0'
 mode.build()
 mode.solve()
 
+
 sim.set_sources(mode, input_slice)
+
 
 #####################################################################################
 # Mode match for optimization
@@ -216,30 +227,33 @@ sim.set_sources(mode, input_slice)
 # we need to calculate the field used as the reference field in our mode match
 # figure of merit calculation. This is the fundamental super mode of the output
 # waveguides.
-fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, 0, Y-w_pml,
-                                         w_pml, Z-w_pml, dx, dy, dz)
 
-fom_mode = emopt.modes.ModeFullVector(wavelength, eps, mu, fom_slice, n0=3.45,
+
+fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml,
+                                         0, 0, dx, dy, 1.0)
+
+
+fom_mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
                                    neigs=4)
 
+
 # Need to be consistent with boundary conditions!
-fom_mode.bc = 'H0'
+fom_mode.bc = '0'
 fom_mode.build()
 fom_mode.solve()
 
 # Retrieve the fields for the mode match
-Exm = fom_mode.get_field_interp(0, 'Ex')
-Eym = fom_mode.get_field_interp(0, 'Ey')
-Ezm = fom_mode.get_field_interp(0, 'Ez')
-Hxm = fom_mode.get_field_interp(0, 'Hx')
-Hym = fom_mode.get_field_interp(0, 'Hy')
-Hzm = fom_mode.get_field_interp(0, 'Hz')
-print Ezm.shape
-print Hxm.shape
-print Hym.shape
+if(NOT_PARALLEL):
+    Ezm = fom_mode.get_field_interp(0, 'Ez')
+    Hxm = fom_mode.get_field_interp(0, 'Hx')
+    Hym = fom_mode.get_field_interp(0, 'Hy')
+else:
+    Ezm = MathDummy()
+    Hxm = MathDummy()
+    Hym = MathDummy()
 
-mode_match = emopt.fomutils.ModeMatch([1,0,0], dy, dz, Exm, Eym, Ezm,
-                                      Hxm, Hym, Hzm)
+mode_match = emopt.fomutils.ModeMatch([1,0,0], dy, Ezm=Ezm,
+                                      Hxm=Hxm, Hym=Hym)
 
 #####################################################################################
 # Setup the AdjointMethod object needed for gradient calculations
@@ -261,21 +275,22 @@ fom, pfinal = opt.run()
 # run a simulation to make sure we visualize the correct data
 am.fom(pfinal)
 
-field_monitor = emopt.misc.DomainCoordinates(w_pml, X-w_pml, 0, Y-w_pml, Z/2,
-                                             Z/2, dx, dy, dz)
+field_monitor = emopt.misc.DomainCoordinates(w_pml, X-w_pml, w_pml, Y-w_pml, 0,
+                                             0, dx, dy, 1.0)
 
 # visualize the final results!
-Ey = sim.get_field_interp('Ey', domain=field_monitor, squeeze=True)
+Ez = sim.get_field_interp('Ez', domain=field_monitor, squeeze=True)
 if(NOT_PARALLEL):
     import matplotlib.pyplot as plt
 
     # Mirror the electric field for nicer plotting :)
-    Ey = np.concatenate([Ey[::-1], Ey], axis=0)
+    Ez = np.concatenate([Ez[::-1], Ez], axis=0)
 
     eps_arr = eps.get_values_in(field_monitor, squeeze=True)
     vmax = np.max(np.abs(Ey))
     f = plt.figure()
     ax1 = f.add_subplot(111)
     ax1.imshow(np.abs(Ey), extent=[0,X-2*w_pml,0,2*Y-2*w_pml], vmin=0, vmax=vmax, cmap='seismic')
-    plt.show()
+    plt.save_fig('hello.pdf')
+    #plt.show()
 

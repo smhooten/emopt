@@ -26,10 +26,10 @@ from builtins import range
 from builtins import object
 from .simulation import MaxwellSolver
 from .defs import FieldComponent
-from .misc import DomainCoordinates2D, RANK, MathDummy, NOT_PARALLEL, COMM, \
+from .misc import DomainCoordinates, RANK, MathDummy, NOT_PARALLEL, COMM, \
 info_message, warning_message, N_PROC, run_on_master
 from .fdtd_2d_ctypes import libFDTD
-from .modes import ModeFullVector
+from .modes import ModeTE
 import petsc4py
 import sys
 petsc4py.init(sys.argv)
@@ -51,30 +51,20 @@ class SourceArray_TE(object):
 
     Parameters
     ----------
-    Jx : numpy.ndarray
-        The x-component of the electric current density
-    Jy : numpy.ndarray
-        The x-component of the electric current density
     Jz : numpy.ndarray
         The x-component of the electric current density
     Mx : numpy.ndarray
         The x-component of the magnetic current density
     My : numpy.ndarray
         The x-component of the magnetic current density
-    Mz : numpy.ndarray
-        The x-component of the magnetic current density
-    i0 : int
-        The LOCAL starting z index of the source arrays
     j0 : int
         The LOCAL starting y index of the source arrays
     k0 : int
-        The LOCAL starting k index of the source arrays
-    I : int
-        The z width of the source array
+        The LOCAL starting z index of the source arrays
     J : int
         The y width of the source array
     K : int
-        The z width of the source array
+        The x width of the source array
     """
     def __init__(self, Jz, Mx, My, j0, k0, J, K):
         self.Jz = Jz
@@ -249,10 +239,10 @@ class FDTD_TE(MaxwellSolver):
         self._R = wavelength/(2*pi)
 
         ## Courant number < 1
-        self._Sc = 0.95
+        self._Sc = 0.99
         self._min_rindex = min_rindex
         # sqrt(3) needed or sqrt(2)?
-        dt = self._Sc * np.min([dx, dy])/self._R / np.sqrt(3) * min_rindex
+        dt = self._Sc * np.min([dx, dy])/self._R / np.sqrt(2) * min_rindex
         self._dt = dt
 
 
@@ -317,7 +307,7 @@ class FDTD_TE(MaxwellSolver):
                 self._Hx, self._Hy)
         libFDTD.FDTD_TE_set_mat_arrays(self._libfdtd,
                 self._eps_z.getArray(),
-                self._mu_x.getArray(), self._mu_y.getArray()
+                self._mu_x.getArray(), self._mu_y.getArray())
 
         # set whether or not materials are complex valued
         libFDTD.FDTD_TE_set_complex_eps(self._libfdtd, complex_eps)
@@ -402,7 +392,7 @@ class FDTD_TE(MaxwellSolver):
             libFDTD.FDTD_TE_set_wavelength(self._libfdtd, wlen)
 
             ds = np.min([self._dx, self._dy])
-            dt = self._Sc * ds/self._R / np.sqrt(3) * self._min_rindex
+            dt = self._Sc * ds/self._R / np.sqrt(2) * self._min_rindex
             self._dt = dt
             libFDTD.FDTD_TE_set_dt(self._libfdtd, dt)
 
@@ -448,8 +438,8 @@ class FDTD_TE(MaxwellSolver):
             warning_message('A courant number greater than 1 will lead to ' \
                             'instability.', 'emopt.fdtd')
         self._Sc = Sc
-        ds = np.min([self._dx, self._dy)
-        dt = self._Sc * ds/self._R / np.sqrt(3) * self._min_rindex
+        ds = np.min([self._dx, self._dy])
+        dt = self._Sc * ds/self._R / np.sqrt(2) * self._min_rindex
         self._dt = dt
         libFDTD.FDTD_TE_set_dt(self._libfdtd, dt)
 
@@ -593,7 +583,7 @@ class FDTD_TE(MaxwellSolver):
         # determine the local portion of the array that is relevant
         # First: don't do anything if this process does not contain the
         # provided source arrays
-        elif(j0 >= domain.j2):     return None, None, None, None
+        if(j0 >= domain.j2):       return None, None, None, None
         elif(j0 + J <= domain.j1): return None, None, None, None
         elif(k0 >= domain.k2):     return None, None, None, None
         elif(k0 + K <= domain.k1): return None, None, None, None
@@ -633,8 +623,8 @@ class FDTD_TE(MaxwellSolver):
         g_inds, l_inds, d_inds, sizes = self.__get_local_domain_overlap(domain)
         if(g_inds == None): return # no overlap between source and this chunk
 
-        jd1 = d_inds[1]; jd2 = d_inds[1] + sizes[1]
-        kd1 = d_inds[2]; kd2 = d_inds[2] + sizes[2]
+        jd1 = d_inds[0]; jd2 = d_inds[0] + sizes[0];
+        kd1 = d_inds[1]; kd2 = d_inds[1] + sizes[1];
 
         # get the pieces which are relevant to this processor
         Jzs = np.copy(Jz[jd1:jd2, kd1:kd2]).ravel()
@@ -642,9 +632,9 @@ class FDTD_TE(MaxwellSolver):
         Mys = np.copy(My[jd1:jd2, kd1:kd2]).ravel()
 
         src = SourceArray_TE(Jzs,
-                          Mxs, Mys,
-                          l_inds[0], l_inds[1],
-                          sizes[0], sizes[1])
+                             Mxs, Mys,
+                             l_inds[0], l_inds[1],
+                             sizes[0], sizes[1])
 
         if(adjoint): self._adj_sources.append(src)
         else: self._sources.append(src)
@@ -678,7 +668,7 @@ class FDTD_TE(MaxwellSolver):
             The mode source index. This is only relevant if using a
             ModeFullVector object to set the sources. (default = 0)
         """
-        if(type(src) == ModeFullVector):
+        if(type(src) == ModeTE):
             Jzs, Mxs, Mys = src.get_source(mindex, self._dx,
                                                    self._dy)
 
@@ -761,7 +751,6 @@ class FDTD_TE(MaxwellSolver):
         k0, j0 = pos
         K, J = lens
 
-
         eps.get_values(k0, k0+K, j0, j0+J,
                        sx=0.0, sy=0.0,
                        arr=self._eps_z.getArray())
@@ -815,8 +804,10 @@ class FDTD_TE(MaxwellSolver):
             k0, j0 = pos
             K, J = lens
 
-            bbox = DomainCoordinates2D(bbox[0], bbox[1], bbox[2], bbox[3],
-                                     self._dx, self._dy)
+            #bbox = DomainCoordinates2D(bbox[0], bbox[1], bbox[2], bbox[3],
+            #                         self._dx, self._dy)
+            bbox = DomainCoordinates(bbox[0], bbox[1], bbox[2], bbox[3], 0.0, 0.0,
+                                     self._dx, self._dy, 1.0)
 
             g_inds, l_inds, d_inds, sizes = self.__get_local_domain_overlap(bbox)
             if(g_inds == None): return # no overlap between source and this chunk
@@ -1134,8 +1125,10 @@ class FDTD_TE(MaxwellSolver):
         ##Get the uninterpolated field component in the specified domain.
         # The process is nearly identical for forward/adjoint
         if(domain == None):
-            domain = DomainCoordinates2D(0, self._X, 0, self._Y,
-                                       self._dx, self._dy)
+            #domain = DomainCoordinates2D(0, self._X, 0, self._Y,
+            #                           self._dx, self._dy)
+            domain = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
+                                       self._dx, self._dy, 1.0)
 
         if(component == FieldComponent.Ez):
             if(adjoint): field = self._Ez_adj_t0
@@ -1227,8 +1220,10 @@ class FDTD_TE(MaxwellSolver):
         else:
             # if no domain was provided
             if(domain == None):
-                domain_interp = DomainCoordinates2D(0, self._X, 0, self._Y,
-                                                  self._dx, self._dy)
+                #domain_interp = DomainCoordinates2D(0, self._X, 0, self._Y,
+                #                                  self._dx, self._dy)
+                domain_interp = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
+                                                  self._dx, self._dy, 1.0)
                 domain = domain_interp
 
                 k1 = domain_interp.k1; k2 = domain_interp.k2
@@ -1245,9 +1240,13 @@ class FDTD_TE(MaxwellSolver):
                 if(j1 > 0): j1 -= 1
                 if(j2 < self._Ny-1): j2 += 1
 
-                domain_interp = DomainCoordinates2D(k1*self._dx, k2*self._dx,
+                #domain_interp = DomainCoordinates2D(k1*self._dx, k2*self._dx,
+                #                                  j1*self._dy, j2*self._dy,
+                #                                  self._dx, self._dy)
+                domain_interp = DomainCoordinates(k1*self._dx, k2*self._dx,
                                                   j1*self._dy, j2*self._dy,
-                                                  self._dx, self._dy)
+                                                  0, 0,
+                                                  self._dx, self._dy, 1.0)
 
                 k1 = domain_interp.k1; k2 = domain_interp.k2
                 j1 = domain_interp.j1; j2 = domain_interp.j2
@@ -1325,10 +1324,14 @@ class FDTD_TE(MaxwellSolver):
         else: ymax = self._Y - self._dy
 
 
-        x1 = DomainCoordinates2D(xmin, xmin, ymin, ymax, dx, dy)
-        x2 = DomainCoordinates2D(xmax, xmax, ymin, ymax, dx, dy)
-        y1 = DomainCoordinates2D(xmin, xmax, ymin, ymin, dx, dy)
-        y2 = DomainCoordinates2D(xmin, xmax, ymax, ymax, dx, dy)
+        #x1 = DomainCoordinates2D(xmin, xmin, ymin, ymax, dx, dy)
+        #x2 = DomainCoordinates2D(xmax, xmax, ymin, ymax, dx, dy)
+        #y1 = DomainCoordinates2D(xmin, xmax, ymin, ymin, dx, dy)
+        #y2 = DomainCoordinates2D(xmin, xmax, ymax, ymax, dx, dy)
+        x1 = DomainCoordinates(xmin, xmin, ymin, ymax, 0, 0, dx, dy, 1.0)
+        x2 = DomainCoordinates(xmax, xmax, ymin, ymax, 0, 0, dx, dy, 1.0)
+        y1 = DomainCoordinates(xmin, xmax, ymin, ymin, 0, 0, dx, dy, 1.0)
+        y2 = DomainCoordinates(xmin, xmax, ymax, ymax, 0, 0, dx, dy, 1.0)
 
         # calculate power transmitter through xmin boundary
         Ez = self.get_field_interp('Ez', x1)
@@ -1368,7 +1371,7 @@ class FDTD_TE(MaxwellSolver):
             Py = -0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
             #print Py
             Psrc += Py
-        del Ex; del Ez; del Hx; del Hz
+        del Ez; del Hx;
 
         return Psrc
 

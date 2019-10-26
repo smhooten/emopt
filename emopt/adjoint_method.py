@@ -154,6 +154,7 @@ from builtins import range
 from builtins import object
 from . import fdfd
 from . import fdtd
+from . import fdtd_2d
 from .misc import info_message, warning_message, error_message, RANK, \
 NOT_PARALLEL, run_on_master, N_PROC, COMM
 from . import fomutils
@@ -989,6 +990,9 @@ class AdjointMethodFM2D(AdjointMethod):
         # function are very similar (both require the calculation of the
         # derivative of the materials wrt the design parameters.)  For the sake
         # of performance, we combine the two calculations here.
+        if(isinstance(sim, fdtd_2d.FDTD_TE)):
+            gradient = super(AdjointMethodFM2D, self).calc_gradient(sim, params)
+            return gradient
 
         w_pml_l = sim.w_pml_left
         w_pml_r = sim.w_pml_right
@@ -1246,6 +1250,33 @@ class AdjointMethodPNF2D(AdjointMethodFM2D):
                                                                           dfdHx, \
                                                                           dfdHy)
                 return (dFdEz, dFdHx, dFdHy)
+            elif(isinstance(sim, fdtd_2d.FDTD_TE)):
+                fom = self.calc_f(sim, params)
+                dfdxs = self.calc_dfdx(sim, params)
+                domains = self.get_fom_domains()
+
+                domains = COMM.bcast(domains, root=0)
+                Nderiv = len(domains)
+
+                adjoint_sources = [[], []]
+                for i in range(Nderiv):
+                    if(NOT_PARALLEL):
+                        dfdx = dfdxs[i]
+                        dFdEz = dfdx[0]
+                        dFdHx = dfdx[1]
+                        dFdHy = dfdx[2]
+                    else:
+                        dFdEz = None
+                        dFdHx = None; dFdHy = None;
+
+                    fom_domain = domains[i]
+                    a_src = fomutils.power_norm_dFdx_TE_fdtd(sim, fom,
+                                                        self.fom_domain,
+                                                        dFdEz,
+                                                        dFdHx, dFdHy)
+                    adjoint_sources = [adjoint_sources[0]+a_src[0],
+                                       adjoint_sources[1]+a_src[1]]
+                return adjoint_sources
         else:
             return None
 
@@ -1285,6 +1316,23 @@ class AdjointMethodPNF2D(AdjointMethodFM2D):
                 H2 = Hz * np.conj(Hz)
 
         elif(isinstance(sim, fdfd.FDFD_TE)):
+            M = sim.M
+            N = sim.N
+            dx = sim.dx
+            dy = sim.dy
+
+            Ez = sim.get_field_interp('Ez')
+            Hx = sim.get_field_interp('Hx')
+            Hy = sim.get_field_interp('Hy')
+
+            # compute the magnitudes squared of E and H -- this is all we need
+            # here.
+            if(NOT_PARALLEL):
+                E2 = Ez * np.conj(Ez)
+                H2 = Hx * np.conj(Hx) + \
+                     Hy * np.conj(Hy)
+
+        elif(isinstance(sim, fdtd_2d.FDTD_TE)):
             M = sim.M
             N = sim.N
             dx = sim.dx

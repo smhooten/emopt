@@ -677,7 +677,7 @@ class DomainCoordinates2D(object):
 
     def contains_index(self, k, j):
         return (k >= self.k1 and k < self.k2) and \
-               (j >= self.j1 and j < self.j2) and \
+               (j >= self.j1 and j < self.j2)
 
     def grow(self, x1, x2, y1, y2):
         """Grow the size of DomainCoordinates in each direction by a specified

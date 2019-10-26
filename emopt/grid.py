@@ -109,7 +109,7 @@ class Material2D(object):
         if(type(arr) == type(None)):
             arr = np.zeros(Nx*Ny, dtype=np.complex128)
         else:
-            arr = np.ravel()
+            arr = np.ravel(arr)
 
         libGrid.Material2D_get_values(self._object, arr, k1, k2, j1, j2, sx, sy)
 
