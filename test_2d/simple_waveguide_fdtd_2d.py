@@ -14,6 +14,8 @@ import emopt
 from emopt.misc import NOT_PARALLEL
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 
 ####################################################################################
 #Simulation Region parameters
@@ -25,8 +27,8 @@ dy = 0.02
 wavelength = 1.55
 
 sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
-                      nconv=10)
-sim.Nmax = 10*sim.Ncycle
+                      nconv=100)
+sim.Nmax = 1000*sim.Ncycle
 w_pml = dx * 15 # set the PML width
 
 # we use symmetry boundary conditions at y=0 to speed things up. We
@@ -74,21 +76,20 @@ sim.set_materials(eps, mu)
 # setup the sources
 ####################################################################################
 # setup the sources -- just a dipole in the center of the waveguide
-src_domain = emopt.misc.DomainCoordinates(X/2-2, X/2+2, Y/2-2, Y/2+2, 0, 0, dx, dy, 1.0)
-Nx = src_domain.Nx
-Ny = src_domain.Ny
+src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, 0, 0, dx, dy, 1.0)
 
 #Jz = np.zeros([M,N], dtype=np.complex128)
 #Mx = np.zeros([M,N], dtype=np.complex128)
 #My = np.zeros([M,N], dtype=np.complex128)
 
-Jz = np.zeros([Nx,Ny], dtype=np.complex128)
-Mx = np.zeros([Nx,Ny], dtype=np.complex128)
-My = np.zeros([Nx,Ny], dtype=np.complex128)
+Jz = np.zeros([1,1], dtype=np.complex128)
+Mx = np.zeros([1,1], dtype=np.complex128)
+My = np.zeros([1,1], dtype=np.complex128)
 
-Jz[Nx//2,Ny//2] = 1j
+Jz[0,0] = 1.0
 
-sim.set_sources((Jz, Mx, My), src_domain)
+src = [Jz, Mx, My]
+sim.set_sources(src, src_domain)
 
 ####################################################################################
 # Build and simulate
@@ -125,4 +126,4 @@ if(NOT_PARALLEL):
     ax.set_xlabel('x [um]', fontsize=14)
     ax.set_ylabel('y [um]', fontsize=14)
     f.colorbar(im)
-    plt.savefig('hello'+str(int(ttt))+'.pdf')
+    plt.savefig('simple_waveguide.pdf')

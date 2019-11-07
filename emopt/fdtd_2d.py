@@ -316,6 +316,7 @@ class FDTD_TE(MaxwellSolver):
 
         ## Setup default PML properties
         w_pml = 15
+        # Thicker PML seems to work better
         self._w_pml = [w_pml*dx, w_pml*dx, \
                       w_pml*dy, w_pml*dy]
         self._w_pml_xmin = w_pml
@@ -325,7 +326,7 @@ class FDTD_TE(MaxwellSolver):
 
         self._pml_sigma = 3.0
         self._pml_alpha = 0.0
-        self._pml_kappa = 1.0
+        self._pml_kappa = 2.0
         self._pml_pow = 3.0
 
         libFDTD.FDTD_TE_set_pml_widths(self._libfdtd, w_pml, w_pml,
@@ -622,6 +623,7 @@ class FDTD_TE(MaxwellSolver):
 
         g_inds, l_inds, d_inds, sizes = self.__get_local_domain_overlap(domain)
         if(g_inds == None): return # no overlap between source and this chunk
+        print("Got Here")
 
         jd1 = d_inds[0]; jd2 = d_inds[0] + sizes[0];
         kd1 = d_inds[1]; kd2 = d_inds[1] + sizes[1];

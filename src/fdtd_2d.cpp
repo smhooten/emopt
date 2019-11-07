@@ -1144,7 +1144,6 @@ void fdtd_2d::FDTD_TE::add_source(complex128 *Jz,
         }
     }
     }
-
     _sources.push_back(src);
 }
 

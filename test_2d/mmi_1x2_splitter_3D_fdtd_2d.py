@@ -137,8 +137,8 @@ class MMISplitterAdjointMethod(AdjointMethodPNF2D):
 ####################################################################################
 X = 5.0   # simulation size along x
 Y = 4.0 # simulation size along y
-dx = 0.005 # grid spacing along x
-dy = 0.005 # grid spacing along y
+dx = 0.02 # grid spacing along x
+dy = 0.02 # grid spacing along y
 
 wavelength = 1.55
 
@@ -153,7 +153,7 @@ sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
 times = [1000]
 for ttt in times:
     sim.Nmax = int(ttt)*sim.Ncycle
-    w_pml = dx * 15 # set the PML width
+    w_pml = dx * 30 # set the PML width
     
     # we use symmetry boundary conditions at y=0 to speed things up. We
     # need to make sure to set the PML width at the minimum y boundary is set to
@@ -204,7 +204,7 @@ for ttt in times:
     # Setup the sources
     #####################################################################################
     # We excite the system by injecting the fundamental mode of the input waveguide
-    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, Y/2-2*w_wg,Y/2+ 2*w_wg, 0, 0, dx, dy, 1.0)
+    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, Y/2-10*w_wg,Y/2+ 10*w_wg, 0, 0, dx, dy, 1.0)
     
     mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
                                        neigs=4)
@@ -297,6 +297,6 @@ for ttt in times:
         f = plt.figure()
         ax1 = f.add_subplot(111)
         ax1.imshow(np.abs(Ez), extent=[0,X,0,Y], vmin=0, vmax=vmax, cmap='seismic')
-        plt.savefig('hello'+str(int(ttt))+'.pdf')
+        plt.savefig('hello.pdf')
         #plt.show()
     
