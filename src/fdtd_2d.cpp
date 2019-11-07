@@ -5,6 +5,7 @@
 fdtd_2d::FDTD_TE::FDTD_TE() 
 {
     // make sure all of our PML arrays start NULL
+    /*
     _pml_Ezx0 = NULL; _pml_Ezx1 = NULL; _pml_Ezy0 = NULL; _pml_Ezy1 = NULL;
     _pml_Hxy0 = NULL; _pml_Hxy1 = NULL; 
     _pml_Hyx0 = NULL; _pml_Hyx1 = NULL; 
@@ -22,11 +23,33 @@ fdtd_2d::FDTD_TE::FDTD_TE()
     _w_pml_y0 = 0; _w_pml_y1 = 0;
 
     _complex_eps = false;
+    */
+    _pml_Exy0 = NULL; _pml_Exy1 = NULL; _pml_Exz0 = NULL; _pml_Exz1 = NULL;
+    _pml_Eyx0 = NULL; _pml_Eyx1 = NULL; _pml_Eyz0 = NULL; _pml_Eyz1 = NULL;
+    _pml_Ezx0 = NULL; _pml_Ezx1 = NULL; _pml_Ezy0 = NULL; _pml_Ezy1 = NULL;
+    _pml_Hxy0 = NULL; _pml_Hxy1 = NULL; _pml_Hxz0 = NULL; _pml_Hxz1 = NULL;
+    _pml_Hyx0 = NULL; _pml_Hyx1 = NULL; _pml_Hyz0 = NULL; _pml_Hyz1 = NULL;
+    _pml_Hzx0 = NULL; _pml_Hzx1 = NULL; _pml_Hzy0 = NULL; _pml_Hzy1 = NULL;
+    
+    _kappa_H_x = NULL; _kappa_H_y = NULL; _kappa_H_z = NULL;
+    _kappa_E_x = NULL; _kappa_E_y = NULL; _kappa_E_z = NULL;
+
+    _bHx = NULL; _bHy = NULL; _bHz = NULL;
+    _bEx = NULL; _bEy = NULL; _bEz = NULL;
+
+    _cHx = NULL; _cHy = NULL; _cHz = NULL;
+    _cEx = NULL; _cEy = NULL; _cEz = NULL;
+
+    _w_pml_x0 = 0; _w_pml_x1 = 0;
+    _w_pml_y0 = 0; _w_pml_y1 = 0;
+
+    _complex_eps = false;
 }
 
 fdtd_2d::FDTD_TE::~FDTD_TE()
 {
     // Clean up PML arrays
+    /*
     delete[] _pml_Ezx0; delete[] _pml_Ezx1; delete[] _pml_Ezy0; delete[] _pml_Ezy1;
     delete[] _pml_Hxy0; delete[] _pml_Hxy1;
     delete[] _pml_Hyx0; delete[] _pml_Hyx1;
@@ -48,6 +71,37 @@ fdtd_2d::FDTD_TE::~FDTD_TE()
 
     delete [] _cEx;
     delete [] _cEy;
+    */
+    delete[] _pml_Exy0; delete[] _pml_Exy1; delete[] _pml_Exz0; delete[] _pml_Exz1;
+    delete[] _pml_Eyx0; delete[] _pml_Eyx1; delete[] _pml_Eyz0; delete[] _pml_Eyz1;
+    delete[] _pml_Ezx0; delete[] _pml_Ezx1; delete[] _pml_Ezy0; delete[] _pml_Ezy1;
+    delete[] _pml_Hxy0; delete[] _pml_Hxy1; delete[] _pml_Hxz0; delete[] _pml_Hxz1;
+    delete[] _pml_Hyx0; delete[] _pml_Hyx1; delete[] _pml_Hyz0; delete[] _pml_Hyz1;
+    delete[] _pml_Hzx0; delete[] _pml_Hzx1; delete[] _pml_Hzy0; delete[] _pml_Hzy1;
+
+    delete [] _kappa_H_x;
+    delete [] _kappa_H_y;
+    delete [] _kappa_H_z;
+
+    delete [] _kappa_E_x;
+    delete [] _kappa_E_y;
+    delete [] _kappa_E_z;
+
+    delete [] _bHx;
+    delete [] _bHy;
+    delete [] _bHz;
+
+    delete [] _bEx;
+    delete [] _bEy;
+    delete [] _bEz;
+
+    delete [] _cHx;
+    delete [] _cHy;
+    delete [] _cHz;
+
+    delete [] _cEx;
+    delete [] _cEy;
+    delete [] _cEz;
 }
 
 void fdtd_2d::FDTD_TE::set_physical_dims(double X, double Y,
@@ -66,9 +120,8 @@ void fdtd_2d::FDTD_TE::set_grid_dims(int Nx, int Ny)
 
 void fdtd_2d::FDTD_TE::set_local_grid(int k0, int j0, int K, int J)
 {
-     _j0 = j0; _k0 = k0;
-     _J = J; _K = K;
-
+    _j0 = j0; _k0 = k0;
+    _J = J; _K = K;
 }
 
 
@@ -121,7 +174,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
 
     double dEzdx, dEzdy;
     complex128 *Mx, *My;
-
+    
     // Setup the fields on the simulation boundary based on the boundary conditions
     if(_bc[0] != 'P' && _k0 + _K == _Nx){
         for(int j = 0; j < _J; j++) {
@@ -132,6 +185,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
         }
     }
 
+
     if(_bc[1] != 'P' && _j0 + _J == _Ny){
         for(int k = 0; k < _K; k++) {
             // ind_jk = (_J+2)*(_K+2) + (_J+1)*(_K+2) + k + 1;
@@ -140,6 +194,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             _Ez[ind_jk] = 0.0;
         }
     }
+
+    // why does this fail only for some number of procs?
 
     for(int j = 0; j < _J; j++) {
         for(int k = 0; k < _K; k++) {
@@ -206,7 +262,8 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
 
             if(j + _j0 < pml_ymin) {
                 //ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
-                ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
+                // ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
+                ind_pml = j*_K + k;
 
                 // compute coefficients
                 ind_pml_param = pml_ymin - j - _j0 - 1;
@@ -220,6 +277,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             }
             else if(j + _j0 >= pml_ymax) {
                 // ind_pml = (_j0 + _J - pml_ymax)*_K +(_j0 + j - pml_ymax)*_K + k;
+                //ind_pml = (_j0 + j - pml_ymax)*_K + k;
                 ind_pml = (_j0 + j - pml_ymax)*_K + k;
 
                 // compute coefficients
@@ -234,6 +292,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
             }
         }
     }
+
     
 
     // Update sources
@@ -421,7 +480,8 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
             
             // Do PML updates
             if(k + _k0 < pml_xmin) {
-                ind_pml = _J*(pml_xmin-_k0) + j*(pml_xmin-_k0) + k;
+                //ind_pml = _J*(pml_xmin-_k0) + j*(pml_xmin-_k0) + k;
+                ind_pml = j*(pml_xmin-_k0) + k;
                 
                 // get PML coefficients
                 ind_pml_param = pml_xmin - k - _k0 - 1;
@@ -449,7 +509,8 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
             }
 
             if(j + _j0 < pml_ymin) {
-                ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
+                //ind_pml = (pml_ymin - _j0)*_K +j*_K + k;
+                ind_pml = j*_K + k;
 
                 // get coefficients
                 ind_pml_param = pml_ymin - j - _j0 - 1;
@@ -462,7 +523,8 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
                 _Ez[ind_jk] = _Ez[ind_jk] - (_pml_Hxy0[ind_pml]-dHxdy+dHxdy/kappa) * b_z;
             }
             else if(j + _j0 >= pml_ymax) {
-                ind_pml = (_j0 + _J - pml_ymax)*_K +(_j0 + j - pml_ymax)*_K + k;
+                //ind_pml = (_j0 + _J - pml_ymax)*_K +(_j0 + j - pml_ymax)*_K + k;
+                ind_pml = (_j0 + j - pml_ymax)*_K + k;
 
                 // get coefficients
                 ind_pml_param = j+_j0 - pml_ymax + _w_pml_y0;
@@ -1357,7 +1419,7 @@ void FDTD_TE_copy_from_ghost_comm(double* dest, complex128* ghost, int J, int K)
     nstart = 2*J + 2*K + J;
     for(int j = 0; j < J; j++) {
         //ind_jk = (J+2)*(K+2) + (j+1)*(K+2) + K+1;
-        ind_jk = (j+1)*(K+2) + K+1;
+        ind_jk = (j+1)*(K+2) + K + 1;
         ind_ghost = nstart + j;
 
         dest[ind_jk] = ghost[ind_ghost].real;

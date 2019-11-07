@@ -33,6 +33,8 @@ The primary advantage of using the FDTD solver is that it enables us to tackle
 much larger/higher resolution problems. In this example, we use a finer grid
 spacing than the FDFD example.
 """
+import matplotlib
+matplotlib.use('Agg')
 
 import emopt
 from emopt.misc import NOT_PARALLEL, run_on_master, MathDummy
@@ -130,14 +132,13 @@ class MMISplitterAdjointMethod(AdjointMethodPNF2D):
         return zeros."""
         return np.zeros(len(params))
 
-
 ####################################################################################
 # Simulation parameters
 ####################################################################################
 X = 5.0   # simulation size along x
 Y = 4.0 # simulation size along y
-dx = 0.02 # grid spacing along x
-dy = 0.02 # grid spacing along y
+dx = 0.005 # grid spacing along x
+dy = 0.005 # grid spacing along y
 
 wavelength = 1.55
 
@@ -146,151 +147,156 @@ wavelength = 1.55
 #####################################################################################
 # Setup the simulation--rtol tells the iterative solver when to stop. 5e-5
 # yields reasonably accurate results/gradients
-sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-3, min_rindex=1.44,
-                      nconv=200)
-sim.Nmax = 100*sim.Ncycle
-w_pml = dx * 15 # set the PML width
+sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
+                      nconv=100)
 
-# we use symmetry boundary conditions at y=0 to speed things up. We
-# need to make sure to set the PML width at the minimum y boundary is set to
-# zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
-# :(
-sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
-sim.bc = '00'
-
-# get actual simulation dimensions
-X = sim.X
-Y = sim.Y
-
-if NOT_PARALLEL:
-	print X, Y
-
-#####################################################################################
-# Define the geometry/materials
-#####################################################################################
-# Geometry consists of input waveguide, output waveguide, and MMI splitting
-# section. Structure is silicon clad in SiO2
-w_wg = 0.45
-L_in = X/2+1
-L_out = X/2+1
-L_mmi = 2.4
-w_mmi = 1.75
-h_si = 0.22
-
-wg_in = emopt.grid.Rectangle(X/4, 0, L_in, w_wg); wg_in.layer = 1
-mmi = emopt.grid.Rectangle(X/2, 0, L_mmi, w_mmi); mmi.layer = 1
-wg_out = emopt.grid.Rectangle(3*X/4, w_wg, L_out, w_wg); wg_out.layer = 1
-rbg = emopt.grid.Rectangle(X/2, Y/2, 2*X, 2*Y); rbg.layer = 2
-
-wg_in.material_value = 3.45**2
-mmi.material_value = 3.45**2
-wg_out.material_value = 3.45**2
-rbg.material_value = 1.444**2
-
-eps = emopt.grid.StructuredMaterial2D(X, Y, dx, dy)
-eps.add_primitive(wg_in)
-eps.add_primitive(mmi)
-eps.add_primitive(wg_out)
-eps.add_primitive(rbg)
-
-mu = emopt.grid.ConstantMaterial2D(1.0)
-
-# Set the materials and build the system
-sim.set_materials(eps, mu)
-sim.build()
-
-#####################################################################################
-# Setup the sources
-#####################################################################################
-# We excite the system by injecting the fundamental mode of the input waveguide
-input_slice = emopt.misc.DomainCoordinates(16*dx, 16*dx, w_pml, Y-w_pml, 0, 0, dx, dy, 1.0)
-
-mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
-                                   neigs=4)
-
-# The mode boundary conditions should match the simulation boundary conditins.
-# Mode is in the y-z plane, so the boundary conditions are HE
-
-
-
-mode.bc = '0'
-mode.build()
-mode.solve()
-
-
-sim.set_sources(mode, input_slice)
-
-
-#####################################################################################
-# Mode match for optimization
-#####################################################################################
-# we need to calculate the field used as the reference field in our mode match
-# figure of merit calculation. This is the fundamental super mode of the output
-# waveguides.
-
-
-fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml,
-                                         0, 0, dx, dy, 1.0)
-
-
-fom_mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
-                                   neigs=4)
-
-
-# Need to be consistent with boundary conditions!
-fom_mode.bc = '0'
-fom_mode.build()
-fom_mode.solve()
-
-# Retrieve the fields for the mode match
-if(NOT_PARALLEL):
-    Ezm = fom_mode.get_field_interp(0, 'Ez')
-    Hxm = fom_mode.get_field_interp(0, 'Hx')
-    Hym = fom_mode.get_field_interp(0, 'Hy')
-else:
-    Ezm = MathDummy()
-    Hxm = MathDummy()
-    Hym = MathDummy()
-
-mode_match = emopt.fomutils.ModeMatch([1,0,0], dy, Ezm=Ezm,
-                                      Hxm=Hxm, Hym=Hym)
-
-#####################################################################################
-# Setup the AdjointMethod object needed for gradient calculations
-#####################################################################################
-sim.field_domains = [fom_slice]
-
-am = MMISplitterAdjointMethod(sim, mmi, fom_slice, mode_match)
-params = np.array([w_mmi, L_mmi])
-
-am.check_gradient(params)
-
-#####################################################################################
-# Setup and run the optimization
-#####################################################################################
-# L-BFGS-B will print out the iteration number and FOM value
-opt = emopt.optimizer.Optimizer(am, params, Nmax=10, opt_method='L-BFGS-B')
-fom, pfinal = opt.run()
-
-# run a simulation to make sure we visualize the correct data
-am.fom(pfinal)
-
-field_monitor = emopt.misc.DomainCoordinates(w_pml, X-w_pml, w_pml, Y-w_pml, 0,
-                                             0, dx, dy, 1.0)
-
-# visualize the final results!
-Ez = sim.get_field_interp('Ez', domain=field_monitor, squeeze=True)
-if(NOT_PARALLEL):
-    import matplotlib.pyplot as plt
-
-    # Mirror the electric field for nicer plotting :)
-    Ez = np.concatenate([Ez[::-1], Ez], axis=0)
-
-    eps_arr = eps.get_values_in(field_monitor, squeeze=True)
-    vmax = np.max(np.abs(Ey))
-    f = plt.figure()
-    ax1 = f.add_subplot(111)
-    ax1.imshow(np.abs(Ey), extent=[0,X-2*w_pml,0,2*Y-2*w_pml], vmin=0, vmax=vmax, cmap='seismic')
-    plt.save_fig('hello.pdf')
-    #plt.show()
-
+times = [1000]
+for ttt in times:
+    sim.Nmax = int(ttt)*sim.Ncycle
+    w_pml = dx * 15 # set the PML width
+    
+    # we use symmetry boundary conditions at y=0 to speed things up. We
+    # need to make sure to set the PML width at the minimum y boundary is set to
+    # zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
+    # :(
+    sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
+    sim.bc = '00'
+    
+    # get actual simulation dimensions
+    X = sim.X
+    Y = sim.Y
+    
+    #####################################################################################
+    # Define the geometry/materials
+    #####################################################################################
+    # Geometry consists of input waveguide, output waveguide, and MMI splitting
+    # section. Structure is silicon clad in SiO2
+    w_wg = 0.45
+    L_in = X/2+1
+    L_out = X/2+1
+    L_mmi = 2.4
+    w_mmi = 1.75
+    h_si = 0.22
+    
+    wg_in = emopt.grid.Rectangle(X/4, Y/2, L_in, w_wg); wg_in.layer = 1
+    mmi = emopt.grid.Rectangle(X/2, Y/2, L_mmi, w_mmi); mmi.layer = 1
+    wg_out = emopt.grid.Rectangle(3*X/4, Y/2, L_out, w_wg); wg_out.layer = 1
+    rbg = emopt.grid.Rectangle(X/2, Y/2, X, Y); rbg.layer = 2
+    
+    wg_in.material_value = 3.45**2
+    mmi.material_value = 3.45**2
+    wg_out.material_value = 3.45**2
+    rbg.material_value = 1.444**2
+    
+    eps = emopt.grid.StructuredMaterial2D(X, Y, dx, dy)
+    eps.add_primitive(wg_in)
+    eps.add_primitive(mmi)
+    eps.add_primitive(wg_out)
+    eps.add_primitive(rbg)
+    
+    mu = emopt.grid.ConstantMaterial2D(1.0)
+    
+    # Set the materials and build the system
+    sim.set_materials(eps, mu)
+    sim.build()
+    
+    #####################################################################################
+    # Setup the sources
+    #####################################################################################
+    # We excite the system by injecting the fundamental mode of the input waveguide
+    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, Y/2-2*w_wg,Y/2+ 2*w_wg, 0, 0, dx, dy, 1.0)
+    
+    mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
+                                       neigs=4)
+    
+    # The mode boundary conditions should match the simulation boundary conditins.
+    # Mode is in the y-z plane, so the boundary conditions are HE
+    
+    
+    
+    mode.bc = '0'
+    mode.build()
+    mode.solve()
+    
+    
+    sim.set_sources(mode, input_slice)
+    
+    
+    #####################################################################################
+    # Mode match for optimization
+    #####################################################################################
+    # we need to calculate the field used as the reference field in our mode match
+    # figure of merit calculation. This is the fundamental super mode of the output
+    # waveguides.
+    
+    
+    fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml,
+                                             0, 0, dx, dy, 1.0)
+    
+    
+    fom_mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
+                                       neigs=4)
+    
+    
+    # Need to be consistent with boundary conditions!
+    fom_mode.bc = '0'
+    fom_mode.build()
+    fom_mode.solve()
+    
+    # Retrieve the fields for the mode match
+    if(NOT_PARALLEL):
+        Ezm = fom_mode.get_field_interp(0, 'Ez')
+        Hxm = fom_mode.get_field_interp(0, 'Hx')
+        Hym = fom_mode.get_field_interp(0, 'Hy')
+    else:
+        Ezm = MathDummy()
+        Hxm = MathDummy()
+        Hym = MathDummy()
+    
+    mode_match = emopt.fomutils.ModeMatch([1,0,0], dy, Ezm=Ezm,
+                                          Hxm=Hxm, Hym=Hym)
+    
+    #####################################################################################
+    # Setup the AdjointMethod object needed for gradient calculations
+    #####################################################################################
+    sim.field_domains = [fom_slice]
+    
+    am = MMISplitterAdjointMethod(sim, mmi, fom_slice, mode_match)
+    params = np.array([w_mmi, L_mmi])
+    
+    #am.check_gradient(params)
+    
+    #####################################################################################
+    # Setup and run the optimization
+    #####################################################################################
+    # L-BFGS-B will print out the iteration number and FOM value
+    #opt = emopt.optimizer.Optimizer(am, params, Nmax=10, opt_method='L-BFGS-B')
+    #fom, pfinal = opt.run()
+    #
+    ## run a simulation to make sure we visualize the correct data
+    #am.fom(pfinal)
+    sim.solve_forward()
+    
+    #field_monitor = emopt.misc.DomainCoordinates(w_pml, X-w_pml, w_pml, Y-w_pml, 0,
+    #                                             0, dx, dy, 1.0)
+    field_monitor = emopt.misc.DomainCoordinates(0, X, 0, Y, 0,
+                                                 0, dx, dy, 1.0)
+    
+    # visualize the final results!
+    Ez = sim.get_field_interp('Ez', domain=field_monitor, squeeze=True)
+    Hx = sim.get_field_interp('Hx', domain=field_monitor, squeeze=True)
+    Hy = sim.get_field_interp('Hy', domain=field_monitor, squeeze=True)
+    if(NOT_PARALLEL):
+        import matplotlib.pyplot as plt
+    
+        # Mirror the electric field for nicer plotting :)
+        #Ez = np.concatenate([Ez[::-1], Ez], axis=0)
+    
+        eps_arr = eps.get_values_in(field_monitor, squeeze=True)
+        vmax = np.max(np.abs(Ez))
+        f = plt.figure()
+        ax1 = f.add_subplot(111)
+        ax1.imshow(np.abs(Ez), extent=[0,X,0,Y], vmin=0, vmax=vmax, cmap='seismic')
+        plt.savefig('hello'+str(int(ttt))+'.pdf')
+        #plt.show()
+    

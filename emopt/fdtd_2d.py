@@ -239,7 +239,7 @@ class FDTD_TE(MaxwellSolver):
         self._R = wavelength/(2*pi)
 
         ## Courant number < 1
-        self._Sc = 0.99
+        self._Sc = 0.95
         self._min_rindex = min_rindex
         # sqrt(3) needed or sqrt(2)?
         dt = self._Sc * np.min([dx, dy])/self._R / np.sqrt(2) * min_rindex
@@ -261,11 +261,13 @@ class FDTD_TE(MaxwellSolver):
         pos, lens = da.getCorners()
         k0, j0 = pos
         K, J = lens
+        print((k0, j0, K, J))
 
         # field arrays
         self._Ez = np.zeros(((K+2)*(J+2),), dtype=np.double)
         self._Hx = np.zeros(((K+2)*(J+2),), dtype=np.double)
         self._Hy = np.zeros(((K+2)*(J+2),), dtype=np.double)
+        print(len(self._Ez))
 
         # material arrays -- global since we dont need to pass values around
         self._eps_z = da.createGlobalVec()
@@ -320,8 +322,6 @@ class FDTD_TE(MaxwellSolver):
         self._w_pml_xmax = w_pml
         self._w_pml_ymin = w_pml
         self._w_pml_ymax = w_pml
-        self._w_pml_zmin = w_pml
-        self._w_pml_zmax = w_pml
 
         self._pml_sigma = 3.0
         self._pml_alpha = 0.0
@@ -337,7 +337,7 @@ class FDTD_TE(MaxwellSolver):
 
         ## Setup the source properties
         Nlambda = wavelength / np.min([dx, dy]) / self._min_rindex
-        Ncycle = Nlambda * np.sqrt(3)
+        Ncycle = Nlambda * np.sqrt(2)
         self._Nlambda = Nlambda # spatial steps per wavelength
         self._Ncycle = Ncycle #  time steps per period of oscillation
 
@@ -1051,8 +1051,8 @@ class FDTD_TE(MaxwellSolver):
                                     src.j0, src.k0,
                                     src.J, src.K,
                                     False)
-
         self.__solve()
+
 
         self.update_saved_fields()
 
