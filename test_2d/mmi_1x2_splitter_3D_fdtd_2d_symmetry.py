@@ -159,8 +159,8 @@ for ttt in times:
     # need to make sure to set the PML width at the minimum y boundary is set to
     # zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
     # :(
-    sim.w_pml = [w_pml, w_pml, 0, w_pml]
-    sim.bc = '0H'
+    sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
+    sim.bc = '00'
     
     # get actual simulation dimensions
     X = sim.X
@@ -178,10 +178,10 @@ for ttt in times:
     w_mmi = 1.75
     h_si = 0.22
     
-    wg_in = emopt.grid.Rectangle(X/4, 0, L_in, w_wg); wg_in.layer = 1
-    mmi = emopt.grid.Rectangle(X/2, 0, L_mmi, w_mmi); mmi.layer = 1
-    wg_out = emopt.grid.Rectangle(3*X/4, 0, L_out, w_wg); wg_out.layer = 1
-    rbg = emopt.grid.Rectangle(X/2, 0, X, Y); rbg.layer = 2
+    wg_in = emopt.grid.Rectangle(X/4, Y/2, L_in, w_wg); wg_in.layer = 1
+    mmi = emopt.grid.Rectangle(X/2, Y/2, L_mmi, w_mmi); mmi.layer = 1
+    wg_out = emopt.grid.Rectangle(3*X/4, Y/2, L_out, w_wg); wg_out.layer = 1
+    rbg = emopt.grid.Rectangle(X/2, Y/2, X, Y); rbg.layer = 2
     
     wg_in.material_value = 3.45**2
     mmi.material_value = 3.45**2
@@ -204,7 +204,7 @@ for ttt in times:
     # Setup the sources
     #####################################################################################
     # We excite the system by injecting the fundamental mode of the input waveguide
-    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, 0, Y-w_pml, 0, 0, dx, dy, 1.0)
+    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, Y/2-10*w_wg,Y/2+ 10*w_wg, 0, 0, dx, dy, 1.0)
     
     mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
                                        neigs=4)
@@ -214,7 +214,7 @@ for ttt in times:
     
     
     
-    mode.bc = 'H'
+    mode.bc = '0'
     mode.build()
     mode.solve()
     
@@ -230,7 +230,7 @@ for ttt in times:
     # waveguides.
     
     
-    fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, 0, Y-w_pml,
+    fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml,
                                              0, 0, dx, dy, 1.0)
     
     
@@ -291,14 +291,13 @@ for ttt in times:
     
         # Mirror the electric field for nicer plotting :)
         #Ez = np.concatenate([Ez[::-1], Ez], axis=0)
-        Ez = np.concatenate([Ez[::-1], Ez], axis=0)
     
         eps_arr = eps.get_values_in(field_monitor, squeeze=True)
         vmax = np.max(np.abs(Ez))
         f = plt.figure()
         ax1 = f.add_subplot(111)
         #ax1.imshow(np.abs(Ez), extent=[0,X,0,Y], vmin=0, vmax=vmax, cmap='seismic', interpolation='none')
-        ax1.imshow(Ez.real, extent=[0,X,0,Y], vmin=-vmax, vmax=vmax, cmap='seismic', interpolation='none')
-        plt.savefig('hello_sym.pdf')
+        ax1.imshow(np.abs(Ez), extent=[0,X,0,Y], vmin=0, vmax=vmax, cmap='seismic', interpolation='none')
+        plt.savefig('hello2.pdf')
         #plt.show()
     

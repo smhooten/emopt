@@ -239,7 +239,8 @@ class FDTD_TE(MaxwellSolver):
         self._R = wavelength/(2*pi)
 
         ## Courant number < 1
-        self._Sc = 0.95
+        ## Why are some problems unstable for larger Sc?
+        self._Sc = 0.65
         self._min_rindex = min_rindex
         # sqrt(3) needed or sqrt(2)?
         dt = self._Sc * np.min([dx, dy])/self._R / np.sqrt(2) * min_rindex
@@ -261,13 +262,11 @@ class FDTD_TE(MaxwellSolver):
         pos, lens = da.getCorners()
         k0, j0 = pos
         K, J = lens
-        print((k0, j0, K, J))
 
         # field arrays
         self._Ez = np.zeros(((K+2)*(J+2),), dtype=np.double)
         self._Hx = np.zeros(((K+2)*(J+2),), dtype=np.double)
         self._Hy = np.zeros(((K+2)*(J+2),), dtype=np.double)
-        print(len(self._Ez))
 
         # material arrays -- global since we dont need to pass values around
         self._eps_z = da.createGlobalVec()
@@ -623,7 +622,6 @@ class FDTD_TE(MaxwellSolver):
 
         g_inds, l_inds, d_inds, sizes = self.__get_local_domain_overlap(domain)
         if(g_inds == None): return # no overlap between source and this chunk
-        print("Got Here")
 
         jd1 = d_inds[0]; jd2 = d_inds[0] + sizes[0];
         kd1 = d_inds[1]; kd2 = d_inds[1] + sizes[1];
@@ -637,6 +635,11 @@ class FDTD_TE(MaxwellSolver):
                              Mxs, Mys,
                              l_inds[0], l_inds[1],
                              sizes[0], sizes[1])
+
+        print(src.J)
+        print(src.K)
+        print(src.j0)
+        print(src.k0)
 
         if(adjoint): self._adj_sources.append(src)
         else: self._sources.append(src)

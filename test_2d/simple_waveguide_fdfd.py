@@ -24,23 +24,23 @@ X = 10.0
 Y = 7.0
 dx = 0.02
 dy = 0.02
-wavelength = 1.55
+wlen = 1.55
+sim = emopt.fdfd.FDFD_TE(X, Y, dx, dy, wlen)
 
-sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
-                      nconv=100)
-sim.Nmax = 1000*sim.Ncycle
-w_pml = dx * 30 # set the PML width
+# by default, PML size is chosen for you. If you want to specify your own PML
+# sizes you can set them using the sim.w_pml attribute which is an array with 4
+# values [w_xmin, w_xmax, w_ymin, w_ymax] where each value is a PML width for
+# the corresponding simulation boundary. e.g.
+# sim.w_pml = [dx*12, dx*12, dx*12, dx*12]
 
-# we use symmetry boundary conditions at y=0 to speed things up. We
-# need to make sure to set the PML width at the minimum y boundary is set to
-# zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
-# :(
-sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
-sim.bc = '00'
-
-# get actual simulation dimensions
+# Get the actual width and height
+# The true width/height will not necessarily match what we used when
+# initializing the solver. This is the case when the width is not an integer
+# multiple of the grid spacing used.
 X = sim.X
 Y = sim.Y
+M = sim.M
+N = sim.N
 
 
 ####################################################################################
@@ -74,26 +74,12 @@ sim.set_materials(eps, mu)
 # setup the sources
 ####################################################################################
 # setup the sources -- just a dipole in the center of the waveguide
-#src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, 0, 0, dx, dy, 1.0)
+Jz = np.zeros([M,N], dtype=np.complex128)
+Mx = np.zeros([M,N], dtype=np.complex128)
+My = np.zeros([M,N], dtype=np.complex128)
+Jz[M//2, N//2] = 1.0
 
-#src_domain = emopt.misc.DomainCoordinates(0, X, 0, Y, 0, 0, dx, dy, 1.0)
-src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, 0, 0, dx, dy, 1.0)
-#Jz = np.zeros([M,N], dtype=np.complex128)
-#Mx = np.zeros([M,N], dtype=np.complex128)
-#My = np.zeros([M,N], dtype=np.complex128)
-
-M = src_domain.Nx
-N = src_domain.Ny
-print((M,N))
-
-Jz = np.zeros([N,M], dtype=np.complex128)
-Mx = np.zeros([N,M], dtype=np.complex128)
-My = np.zeros([N,M], dtype=np.complex128)
-
-Jz[0,0] = 1.0
-
-src = [Jz, Mx, My]
-sim.set_sources(src, src_domain)
+sim.set_sources((Jz, Mx, My))
 
 ####################################################################################
 # Build and simulate
@@ -120,7 +106,7 @@ if(NOT_PARALLEL):
     im = ax.imshow(Ez.real, extent=extent,
                             vmin=-np.max(Ez.real)/1.0,
                             vmax=np.max(Ez.real)/1.0,
-                            cmap='seismic',interpolation='nearest')
+                            cmap='seismic')
 
     # Plot the waveguide boundaries
     ax.plot(extent[0:2], [Y/2-h_wg/2, Y/2-h_wg/2], 'k-')
@@ -130,4 +116,5 @@ if(NOT_PARALLEL):
     ax.set_xlabel('x [um]', fontsize=14)
     ax.set_ylabel('y [um]', fontsize=14)
     f.colorbar(im)
-    plt.savefig('simple_waveguide_fdtd.pdf')
+    #plt.show()
+    plt.savefig('simple_waveguide_fdfd.pdf')

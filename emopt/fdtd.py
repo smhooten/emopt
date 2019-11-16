@@ -736,6 +736,13 @@ class FDTD(MaxwellSolver):
                           l_inds[0], l_inds[1], l_inds[2],
                           sizes[0], sizes[1], sizes[2])
 
+        print(src.I)
+        print(src.J)
+        print(src.K)
+        print(src.i0)
+        print(src.j0)
+        print(src.k0)
+
         if(adjoint): self._adj_sources.append(src)
         else: self._sources.append(src)
 
