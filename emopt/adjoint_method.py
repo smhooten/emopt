@@ -1231,8 +1231,8 @@ class AdjointMethodPNF2D(AdjointMethodFM2D):
         dfdx = self.calc_dfdx(sim, params)
         f = self.calc_f(sim, params)
 
-        if(NOT_PARALLEL):
-            if(isinstance(sim, fdfd.FDFD_TM)):
+        if(isinstance(sim, fdfd.FDFD_TM)):
+            if(NOT_PARALLEL):
                 dfdHz = dfdx[0]
                 dfdEx = dfdx[1]
                 dfdEy = dfdx[2]
@@ -1241,7 +1241,11 @@ class AdjointMethodPNF2D(AdjointMethodFM2D):
                                                                           dfdEx, \
                                                                           dfdEy)
                 return (dFdHz, dFdEx, dFdEy)
-            elif(isinstance(sim, fdfd.FDFD_TE)):
+            else:
+                return None
+
+        elif(isinstance(sim, fdfd.FDFD_TE)):
+            if(NOT_PARALLEL):
                 dfdEz = dfdx[0]
                 dfdHx = dfdx[1]
                 dfdHy = dfdx[2]
@@ -1250,35 +1254,36 @@ class AdjointMethodPNF2D(AdjointMethodFM2D):
                                                                           dfdHx, \
                                                                           dfdHy)
                 return (dFdEz, dFdHx, dFdHy)
-            elif(isinstance(sim, fdtd_2d.FDTD_TE)):
-                fom = self.calc_f(sim, params)
-                dfdxs = self.calc_dfdx(sim, params)
-                domains = self.get_fom_domains()
+            else:
+                return None
 
-                domains = COMM.bcast(domains, root=0)
-                Nderiv = len(domains)
+        elif(isinstance(sim, fdtd_2d.FDTD_TE)):
+            fom = self.calc_f(sim, params)
+            dfdxs = self.calc_dfdx(sim, params)
+            domains = self.get_fom_domains()
 
-                adjoint_sources = [[], []]
-                for i in range(Nderiv):
-                    if(NOT_PARALLEL):
-                        dfdx = dfdxs[i]
-                        dFdEz = dfdx[0]
-                        dFdHx = dfdx[1]
-                        dFdHy = dfdx[2]
-                    else:
-                        dFdEz = None
-                        dFdHx = None; dFdHy = None;
+            domains = COMM.bcast(domains, root=0)
+            Nderiv = len(domains)
 
-                    fom_domain = domains[i]
-                    a_src = fomutils.power_norm_dFdx_TE_fdtd(sim, fom,
-                                                        self.fom_domain,
-                                                        dFdEz,
-                                                        dFdHx, dFdHy)
-                    adjoint_sources = [adjoint_sources[0]+a_src[0],
-                                       adjoint_sources[1]+a_src[1]]
-                return adjoint_sources
-        else:
-            return None
+            adjoint_sources = [[], []]
+            for i in range(Nderiv):
+                if(NOT_PARALLEL):
+                    dfdx = dfdxs[i]
+                    dFdEz = dfdx[0]
+                    dFdHx = dfdx[1]
+                    dFdHy = dfdx[2]
+                else:
+                    dFdEz = None
+                    dFdHx = None; dFdHy = None;
+
+                fom_domain = domains[i]
+                a_src = fomutils.power_norm_dFdx_TE_fdtd(sim, fom,
+                                                    self.fom_domain,
+                                                    dFdEz,
+                                                    dFdHx, dFdHy)
+                adjoint_sources = [adjoint_sources[0]+a_src[0],
+                                   adjoint_sources[1]+a_src[1]]
+            return adjoint_sources
 
     def calc_dFdm(self, sim, params):
         """Calculate the derivative of the power-normalized figure of merit

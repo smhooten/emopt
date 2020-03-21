@@ -110,14 +110,14 @@ class MMISplitterAdjointMethod(AdjointMethodPNF2D):
         Ez, Hx, Hy = sim.saved_fields[0]
         self.mode_match.compute(Ez=Ez, Hx=Hx, Hy=Hy)
 
-        if(NOT_PARALLEL):
-            dfdEz = -1*self.mode_match.get_dFdEz()
-            dfdHx = -1*self.mode_match.get_dFdHx()
-            dfdHy = -1*self.mode_match.get_dFdHy()
-        else:
-            dfdEz = None 
-            dfdHx = None 
-            dfdHy = None 
+        #if(NOT_PARALLEL):
+        dfdEz = -1*self.mode_match.get_dFdEz()
+        dfdHx = -1*self.mode_match.get_dFdHx()
+        dfdHy = -1*self.mode_match.get_dFdHy()
+        #else:
+        #    dfdEz = None 
+        #    dfdHx = None 
+        #    dfdHy = None 
 
         return [(dfdEz, dfdHx, dfdHy)]
 
@@ -137,8 +137,8 @@ class MMISplitterAdjointMethod(AdjointMethodPNF2D):
 ####################################################################################
 X = 5.0   # simulation size along x
 Y = 4.0 # simulation size along y
-dx = 0.01 # grid spacing along x
-dy = 0.01 # grid spacing along y
+dx = 0.02 # grid spacing along x
+dy = 0.02 # grid spacing along y
 
 wavelength = 1.55
 
@@ -148,19 +148,19 @@ wavelength = 1.55
 # Setup the simulation--rtol tells the iterative solver when to stop. 5e-5
 # yields reasonably accurate results/gradients
 sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
-                      nconv=100)
+                      nconv=80)
 
 times = [1000]
 for ttt in times:
     sim.Nmax = int(ttt)*sim.Ncycle
-    w_pml = dx * 30 # set the PML width
+    w_pml = dx * 15 # set the PML width
     
     # we use symmetry boundary conditions at y=0 to speed things up. We
     # need to make sure to set the PML width at the minimum y boundary is set to
     # zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
     # :(
-    sim.w_pml = [w_pml, w_pml, 0, w_pml]
-    sim.bc = '0H'
+    sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
+    sim.bc = '00'
     
     # get actual simulation dimensions
     X = sim.X
@@ -178,10 +178,10 @@ for ttt in times:
     w_mmi = 1.75
     h_si = 0.22
     
-    wg_in = emopt.grid.Rectangle(X/4, 0, L_in, w_wg); wg_in.layer = 1
-    mmi = emopt.grid.Rectangle(X/2, 0, L_mmi, w_mmi); mmi.layer = 1
-    wg_out = emopt.grid.Rectangle(3*X/4, 0, L_out, w_wg); wg_out.layer = 1
-    rbg = emopt.grid.Rectangle(X/2, 0, X, Y); rbg.layer = 2
+    wg_in = emopt.grid.Rectangle(X/4, Y/2, L_in, w_wg); wg_in.layer = 1
+    mmi = emopt.grid.Rectangle(X/2, Y/2, L_mmi, w_mmi); mmi.layer = 1
+    wg_out = emopt.grid.Rectangle(3*X/4, Y/2, L_out, w_wg); wg_out.layer = 1
+    rbg = emopt.grid.Rectangle(X/2, Y/2, X, Y); rbg.layer = 2
     
     wg_in.material_value = 3.45**2
     mmi.material_value = 3.45**2
@@ -204,7 +204,7 @@ for ttt in times:
     # Setup the sources
     #####################################################################################
     # We excite the system by injecting the fundamental mode of the input waveguide
-    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, 0, Y-w_pml, 0, 0, dx, dy, 1.0)
+    input_slice = emopt.misc.DomainCoordinates(w_pml+5*dx, w_pml+5*dx, Y/2-10*w_wg,Y/2+ 10*w_wg, 0, 0, dx, dy, 1.0)
     
     mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
                                        neigs=4)
@@ -214,7 +214,7 @@ for ttt in times:
     
     
     
-    mode.bc = 'H'
+    mode.bc = '0'
     mode.build()
     mode.solve()
     
@@ -230,16 +230,16 @@ for ttt in times:
     # waveguides.
     
     
-    fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, 0, Y-w_pml,
+    fom_slice = emopt.misc.DomainCoordinates(X-w_pml-4*dx, X-w_pml-4*dx, w_pml, Y-w_pml,
                                              0, 0, dx, dy, 1.0)
     
     
-    fom_mode = emopt.modes.ModeTE(wavelength, eps, mu, input_slice, n0=3.45,
+    fom_mode = emopt.modes.ModeTE(wavelength, eps, mu, fom_slice, n0=3.45,
                                        neigs=4)
     
     
     # Need to be consistent with boundary conditions!
-    fom_mode.bc = 'H'
+    fom_mode.bc = '0'
     fom_mode.build()
     fom_mode.solve()
     
@@ -291,14 +291,13 @@ for ttt in times:
     
         # Mirror the electric field for nicer plotting :)
         #Ez = np.concatenate([Ez[::-1], Ez], axis=0)
-        Ez = np.concatenate([Ez[::-1], Ez], axis=0)
     
         eps_arr = eps.get_values_in(field_monitor, squeeze=True)
         vmax = np.max(np.abs(Ez))
         f = plt.figure()
         ax1 = f.add_subplot(111)
         #ax1.imshow(np.abs(Ez), extent=[0,X,0,Y], vmin=0, vmax=vmax, cmap='seismic', interpolation='none')
-        ax1.imshow(Ez.real, extent=[0,X,0,Y], vmin=-vmax, vmax=vmax, cmap='seismic', interpolation='none')
-        plt.savefig('hello_sym.pdf')
+        ax1.imshow(np.abs(Ez), extent=[0,X,0,Y], vmin=0, vmax=vmax, cmap='seismic', interpolation='none')
+        plt.savefig('hello3.pdf')
         #plt.show()
     

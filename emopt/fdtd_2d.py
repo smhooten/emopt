@@ -240,7 +240,7 @@ class FDTD_TE(MaxwellSolver):
 
         ## Courant number < 1
         ## Why are some problems unstable for larger Sc?
-        self._Sc = 0.65
+        self._Sc = 0.95
         self._min_rindex = min_rindex
         # sqrt(3) needed or sqrt(2)?
         dt = self._Sc * np.min([dx, dy])/self._R / np.sqrt(2) * min_rindex
@@ -323,9 +323,13 @@ class FDTD_TE(MaxwellSolver):
         self._w_pml_ymin = w_pml
         self._w_pml_ymax = w_pml
 
-        self._pml_sigma = 3.0
-        self._pml_alpha = 0.0
-        self._pml_kappa = 2.0
+        #self._pml_sigma = 3.0
+        #self._pml_alpha = 0.0
+        #self._pml_kappa = 2.0
+        #self._pml_pow = 3.0
+        self._pml_sigma = 5.0
+        self._pml_alpha = 1.0
+        self._pml_kappa = 3.0
         self._pml_pow = 3.0
 
         libFDTD.FDTD_TE_set_pml_widths(self._libfdtd, w_pml, w_pml,
@@ -1438,6 +1442,265 @@ class FDTD_TE(MaxwellSolver):
         plt.show()
 
 
+class FDTD_TM(FDTD_TE):
+    def __init__(self, X, Y, dx, dy, wavelength, rtol=1e-6, nconv=None,
+                 min_rindex=1.0, complex_eps=False):
+        super(FDTD_TM, self).__init__(X, Y, dx, dy, wavelength, rtol=rtol,
+              nconv=nconv, min_rindex=min_rindex, complex_eps=complex_eps)
+
+    def set_materials(self, eps, mu):
+        self._eps = -1*mu
+        self._mu = -1*eps
+
+    def __get_local_domain_overlap(self, domain):
+        super(FDTD_TM, self).__get_local_domain_overlap(domain)
+
+    def __set_sources(self, src, domain, adjoint=False):
+        super(FDTD_TM, self).__set_sources(src, domain, adjoint=adjoint)
+
+    def set_sources(self, src, domain, mindex=0):
+        """Set a simulation source.
+
+        Simulation sources can be set either using a set of 6 arrays (Jx, Jy,
+        Jz, Mx, My, Mz) or a :class:`modes.ModeFullVector` object. In either
+        case, a domain must be provided which tells the simulation where to put
+        those sources.
+
+        This function operates in an additive manner meaning that multiple
+        calls will add multiple sources to the simulation. To replace the
+        existing sources, simply call :def:`clear_sources` first.
+
+        Parameters
+        ----------
+        src : tuple or modes.ModeFullVector
+            The source arrays or mode object containing source data
+        domain : misc.DomainCoordinates2D
+            The domain which specifies where the source is located
+        mindex : int (optional)
+            The mode source index. This is only relevant if using a
+            ModeFullVector object to set the sources. (default = 0)
+        """
+        if(type(src) == ModeTM):
+            Mzs, Jxs, Jys = src.get_source(mindex, self._dx,
+                                                   self._dy)
+
+            Jzs = COMM.bcast(Jzs, root=0)
+            Mxs = COMM.bcast(Mxs, root=0)
+            Mys = COMM.bcast(Mys, root=0)
+
+            src_arrays = (Mzs, Jxs, Jys)
+        else:
+            src_arrays = src
+
+        self.__set_sources(src_arrays, domain, adjoint=False)
+        COMM.Barrier()
+
+    def __get_field(self, component, domain=None, adjoint=False):
+        ##Get the uninterpolated field component in the specified domain.
+        # The process is nearly identical for forward/adjoint
+        if(domain == None):
+            domain = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
+                                       self._dx, self._dy, 1.0)
+
+        if(component == FieldComponent.Hz):
+            if(adjoint): field = self._Ez_adj_t0
+            else: field = self._Ez_fwd_t0
+        elif(component == FieldComponent.Ex):
+            if(adjoint): field = self._Hx_adj_t0
+            else: field = self._Hx_fwd_t0
+        elif(component == FieldComponent.Ey):
+            if(adjoint): field = self._Hy_adj_t0
+            else: field = self._Hy_fwd_t0
+
+        # get a "natural" representation of the appropriate field vector,
+        # gather it on the rank 0 node and return the appropriate piece
+        self._da.globalToNatural(field, self._vn)
+        scatter, fout = PETSc.Scatter.toZero(self._vn)
+        scatter.scatter(self._vn, fout, False, PETSc.Scatter.Mode.FORWARD)
+
+        if(NOT_PARALLEL):
+            fout = np.array(fout, dtype=np.complex128)
+            fout = np.reshape(fout, [self._Ny, self._Nx])
+            return fout[domain.j, domain.k]
+        else:
+            return MathDummy()
+
+    def get_field_interp(self, component, domain=None, squeeze=False):
+        """Get the desired field component.
+
+        Internally, fields are solved on a staggered grid. In most cases, it is
+        desirable to know all of the field components at the same sets of
+        positions. This requires that we interpolate the fields onto a single
+        grid. In emopt, we interpolate all field components onto the Ez grid.
+
+        Parameters
+        ----------
+        component : str
+            The desired field component.
+        domain : misc.DomainCoordinates2D (optional)
+            The domain from which the field is retrieved. (default = None)
+
+        Returns
+        -------
+        numpy.ndarray
+            The interpolated field
+        """
+        # Ez does not need to be interpolated
+        if(component == FieldComponent.Hz):
+            if(squeeze): return np.squeeze(self.get_field(component, domain))
+            else: return self.get_field(component, domain)
+        else:
+            # if no domain was provided
+            if(domain == None):
+                domain_interp = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
+                                                  self._dx, self._dy, 1.0)
+                domain = domain_interp
+
+                k1 = domain_interp.k1; k2 = domain_interp.k2
+                j1 = domain_interp.j1; j2 = domain_interp.j2
+
+            # in order to properly handle interpolation at the boundaries, we
+            # need to expand the domain
+            else:
+                k1 = domain.k1; k2 = domain.k2
+                j1 = domain.j1; j2 = domain.j2
+
+                if(k1 > 0): k1 -= 1
+                if(k2 < self._Nx-1): k2 += 1
+                if(j1 > 0): j1 -= 1
+                if(j2 < self._Ny-1): j2 += 1
+
+                #domain_interp = DomainCoordinates2D(k1*self._dx, k2*self._dx,
+                #                                  j1*self._dy, j2*self._dy,
+                #                                  self._dx, self._dy)
+                domain_interp = DomainCoordinates(k1*self._dx, k2*self._dx,
+                                                  j1*self._dy, j2*self._dy,
+                                                  0, 0,
+                                                  self._dx, self._dy, 1.0)
+
+                k1 = domain_interp.k1; k2 = domain_interp.k2
+                j1 = domain_interp.j1; j2 = domain_interp.j2
+
+            fraw = self.get_field(component, domain_interp)
+
+            if(RANK != 0):
+                return MathDummy()
+
+            fraw = np.pad(fraw, 1, 'constant', constant_values=0)
+
+            # after interpolation, we will need to crop the field so that it
+            # matches the supplied domain
+            crop_field = lambda f : f[1+domain.j1-j1:-1-(j2-domain.j2), \
+                                      1+domain.k1-k1:-1-(k2-domain.k2)]
+
+            field = None
+            bc = self._bc
+
+            if(component == FieldComponent.Ex):
+                # handle special boundary conditions
+                if(j1 == 0 and bc[1] == 'E'):
+                    fraw[0, :] = -1*fraw[1, :]
+                elif(j1 == 0 and bc[1] == 'H'):
+                    fraw[0, :] = fraw[1, :]
+
+                Hx = np.copy(fraw)
+                Hx[1:, :] += fraw[0:-1, :]
+                Hx = Hx/2.0
+                field = crop_field(Hx)
+
+            elif(component == FieldComponent.Ey):
+                # Handle special boundary conditions
+                if(k1 == 0 and bc[0] == 'E'):
+                    fraw[:, 0] = -1*fraw[:,1]
+                elif(k1 == 0 and bc[0] == 'H'):
+                    fraw[:, 0] = fraw[:, 1]
+
+                Hy = np.copy(fraw)
+                Hy[:, 1:] += fraw[:, 0:-1]
+                Hy = Hy/2.0
+                field = crop_field(Hy)
+
+            else:
+                pass
+
+            if(squeeze): return np.squeeze(field)
+            else: return field
+
+    def get_source_power(self):
+        """Get source power.
+
+        The source power is the total electromagnetic power radiated by the
+        electric and magnetic current sources.
+
+        Returns
+        -------
+        float
+            The source power.
+        """
+        Psrc = 0.0
+
+        # define pml boundary domains
+        dx = self._dx; dy = self._dy;
+        if(self._w_pml[0] > 0): xmin = self._w_pml[0]+dx
+        else: xmin = 0.0
+
+        if(self._w_pml[1] > 0): xmax = self._X - self._w_pml[1]-dx
+        else: xmax = self._X - self._dx
+
+        if(self._w_pml[2] > 0): ymin = self._w_pml[2]+dy
+        else: ymin = 0.0
+
+        if(self._w_pml[3] > 0): ymax = self._Y - self._w_pml[3]-dy
+        else: ymax = self._Y - self._dy
+
+
+        x1 = DomainCoordinates(xmin, xmin, ymin, ymax, 0, 0, dx, dy, 1.0)
+        x2 = DomainCoordinates(xmax, xmax, ymin, ymax, 0, 0, dx, dy, 1.0)
+        y1 = DomainCoordinates(xmin, xmax, ymin, ymin, 0, 0, dx, dy, 1.0)
+        y2 = DomainCoordinates(xmin, xmax, ymax, ymax, 0, 0, dx, dy, 1.0)
+
+        # calculate power transmitter through xmin boundary
+        Ez = self.get_field_interp('Hz', x1)
+        Hy = self.get_field_interp('Ey', x1)
+
+        if(NOT_PARALLEL and self._bc[0] != 'E' and self._bc[0] != 'H'):
+            Px = -0.5*dy*np.sum(np.real(-1*Ez*np.conj(Hy)))
+            #print Px
+            Psrc += Px
+        del Ez; del Hy;
+
+        # calculate power transmitter through xmax boundary
+        Ez = self.get_field_interp('Hz', x2)
+        Hy = self.get_field_interp('Ey', x2)
+
+        if(NOT_PARALLEL):
+            Px = 0.5*dy*np.sum(np.real(-1*Ez*np.conj(Hy)))
+            #print Px
+            Psrc += Px
+        del Ez; del Hy;
+
+        # calculate power transmitter through ymin boundary
+        Ez = self.get_field_interp('Hz', y1)
+        Hx = self.get_field_interp('Ex', y1)
+
+        if(NOT_PARALLEL and self._bc[1] != 'E' and self._bc[1] != 'H'):
+            Py = 0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
+            #print Py
+            Psrc += Py
+        del Ez; del Hx;
+
+        # calculate power transmitter through ymax boundary
+        Ez = self.get_field_interp('Hz', y2)
+        Hx = self.get_field_interp('Ex', y2)
+
+        if(NOT_PARALLEL):
+            Py = -0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
+            #print Py
+            Psrc += Py
+        del Ez; del Hx;
+
+        return Psrc
+
 class GhostComm(object):
 
     def __init__(self, k0, j0, K, J, Nx, Ny):
@@ -1559,3 +1822,5 @@ class GhostComm(object):
             gloc_arr = gloc.getArray()
 
             libFDTD.FDTD_TE_copy_from_ghost_comm(vl, garr, J, K)
+
+
