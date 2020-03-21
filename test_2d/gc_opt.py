@@ -12,7 +12,7 @@ the a mapping between the design parameters of the system and the material
 distributions of the system, the figure of merit, and the quantities needed to
 compute the gradient of the figure of merit with respect to the design
 parameters of the system. Finally, the optimization is run using the
-emopt.optimizer.Optimizer class. In order to monitor the progress of the
+emopt2.optimizer.Optimizer class. In order to monitor the progress of the
 optimization, we define an optional callback function which saves a plot of the
 current state of the optimization after each iteration in the optimization.
 
@@ -33,10 +33,10 @@ in the command line which will run the optimization using 16 cores on the curren
 machine.
 
 """
-# We need to import a lot of things from emopt
-import emopt
-from emopt.misc import NOT_PARALLEL, run_on_master
-from emopt.adjoint_method import AdjointMethodPNF2D
+# We need to import a lot of things from emopt2
+import emopt2
+from emopt2.misc import NOT_PARALLEL, run_on_master
+from emopt2.adjoint_method import AdjointMethodPNF2D
 
 import numpy as np
 from math import pi
@@ -46,7 +46,7 @@ class SiliconGratingAM(AdjointMethodPNF2D):
 
     Parameters
     ----------
-    sim : emopt.fdfd.FDFD
+    sim : emopt2.fdfd.FDFD
         The simulation object
     grating_etch : list of Rectangle
         The list of rectangles which define the grating etch.
@@ -64,7 +64,7 @@ class SiliconGratingAM(AdjointMethodPNF2D):
         The number of grating lines in the grating.
     eps_clad : complex128
         The refractive index of the cladding mateiral
-    mm_line : emopt.misc.DomainCoordinates
+    mm_line : emopt2.misc.DomainCoordinates
         The line where the mode match is computed.
     """
     def __init__(self, sim, grating_etch, wg, substrate, y_ts, w_in, h_wg, Y,
@@ -92,16 +92,16 @@ class SiliconGratingAM(AdjointMethodPNF2D):
 
         # Define the desired field profiles
         # We use a tilted Gaussian beam which approximates a fiber mode
-        Ezm, Hxm, Hym = emopt.misc.gaussian_mode(mm_line.x-match_center,
+        Ezm, Hxm, Hym = emopt2.misc.gaussian_mode(mm_line.x-match_center,
                                                  0.0, match_w0,
                                                  theta, sim._wavelength,
                                                  np.sqrt(eps_clad))
 
-        self.mode_match = emopt.fomutils.ModeMatch([0,1,0], sim.dx, Ezm=Ezm, Hxm=Hxm, Hym=Hym)
+        self.mode_match = emopt2.fomutils.ModeMatch([0,1,0], sim.dx, Ezm=Ezm, Hxm=Hxm, Hym=Hym)
 
         self.current_fom = 0.0
 
-        self.full_domain = emopt.misc.DomainCoordinates(0, sim.X, 0, sim.Y, 0, 0, sim.dx, sim.dy, 1.0)
+        self.full_domain = emopt2.misc.DomainCoordinates(0, sim.X, 0, sim.Y, 0, 0, sim.dx, sim.dy, 1.0)
 
     def update_system(self, params):
         """Update the geometry of the grating coupler based on the provided
@@ -160,7 +160,7 @@ class SiliconGratingAM(AdjointMethodPNF2D):
         the fraction of source power that can couple into the desired Gaussian
         fiber mode.
 
-        In order to simplify working in a parallel environment, emopt will
+        In order to simplify working in a parallel environment, emopt2 will
         return 'MathDummy's on the non-master nodes in place of the actual
         fields. These objects will absorb any mathematical operations, and thus
         you do not need to worry about dealing with the parallelism when
@@ -277,7 +277,7 @@ def plot_update(params, fom_list, sim, am):
 
 
     foms = {'Insertion Loss' : fom_list}
-    emopt.io.plot_iteration(np.flipud(Ez.real), np.flipud(eps.real), sim.X-2*sim.w_pml[0],
+    emopt2.io.plot_iteration(np.flipud(Ez.real), np.flipud(eps.real), sim.X-2*sim.w_pml[0],
                             sim.Y-2*sim.w_pml[2], foms, fname='current_result.pdf',
                             dark=True)
 
@@ -291,7 +291,7 @@ def plot_update(params, fom_list, sim, am):
 
     i = len(fom_list)
     fname = 'data/gc_opt_results'
-    emopt.io.save_results(fname, data)
+    emopt2.io.save_results(fname, data)
 
 if __name__ == '__main__':
     ####################################################################################
@@ -305,7 +305,7 @@ if __name__ == '__main__':
 
     # create the simulation object.
     # TE => Ez, Hx, Hy
-    sim = emopt.fdtd_2d.FDTD_TE(X, Y, dx, dy, wavelength, rtol=1e-5, min_rindex=1.44, nconv=100)
+    sim = emopt2.fdtd_2d.FDTD_TE(X, Y, dx, dy, wavelength, rtol=1e-5, min_rindex=1.44, nconv=100)
     sim.Nmax = 1000*sim.Ncycle
 
     # Get the actual width and height
@@ -318,12 +318,12 @@ if __name__ == '__main__':
     ####################################################################################
     # Define the structure
     ####################################################################################
-    n_si = emopt.misc.n_silicon(wavelength)
+    n_si = emopt2.misc.n_silicon(wavelength)
     eps_si = n_si**2
     eps_clad = 1.444**2
 
     # the effective indices are precomputed for simplicity.  We can compute
-    # these values using emopt.modes
+    # these values using emopt2.modes
     neff = 2.86
     neff_etched = 2.10
     n0 = np.sqrt(eps_clad)
@@ -348,7 +348,7 @@ if __name__ == '__main__':
     grating_etch = []
 
     for i in range(Ng):
-        rect_etch = emopt.grid.Rectangle(w_wg_input+i*period, y_etch,
+        rect_etch = emopt2.grid.Rectangle(w_wg_input+i*period, y_etch,
                                          (1-df)*period, h_etch)
         rect_etch.layer = 1
         rect_etch.material_value = eps_clad
@@ -356,26 +356,26 @@ if __name__ == '__main__':
 
     # grating waveguide
     Lwg = Ng*period + w_wg_input
-    wg = emopt.grid.Rectangle(Lwg/2.0, y_ts, Lwg, h_wg)
+    wg = emopt2.grid.Rectangle(Lwg/2.0, y_ts, Lwg, h_wg)
     wg.layer = 2
     wg.material_value = eps_si
 
     # define substrate
     h_BOX = 2.0
     h_subs = Y/2.0 - h_wg/2.0 - h_BOX
-    substrate = emopt.grid.Rectangle(X/2.0, h_subs/2.0, X, h_subs)
+    substrate = emopt2.grid.Rectangle(X/2.0, h_subs/2.0, X, h_subs)
     substrate.layer = 2
     substrate.material_value = eps_si # silicon
 
     # set the background material using a rectangle equal in size to the system
-    background = emopt.grid.Rectangle(X/2, Y/2, X, Y)
+    background = emopt2.grid.Rectangle(X/2, Y/2, X, Y)
     background.layer = 3
     background.material_value = eps_clad
 
     # assembled the primitives in a StructuredMaterial to be used by the FDFD solver
     # This Material defines the distribution of the permittivity within the simulated
     # environment
-    eps = emopt.grid.StructuredMaterial2D(X, Y, dx, dy)
+    eps = emopt2.grid.StructuredMaterial2D(X, Y, dx, dy)
 
     for g in grating_etch:
         eps.add_primitive(g)
@@ -385,7 +385,7 @@ if __name__ == '__main__':
     eps.add_primitive(background)
 
     # set up the magnetic permeability -- just 1.0 everywhere
-    mu = emopt.grid.ConstantMaterial2D(1.0)
+    mu = emopt2.grid.ConstantMaterial2D(1.0)
 
     # add the materials and build the system
     sim.set_materials(eps, mu)
@@ -396,11 +396,11 @@ if __name__ == '__main__':
     w_src= 3.5
 
     # place the source in the simulation domain
-    src_line = emopt.misc.DomainCoordinates(w_pml+2*dx, w_pml+2*dx, Y/2-w_src/2,
+    src_line = emopt2.misc.DomainCoordinates(w_pml+2*dx, w_pml+2*dx, Y/2-w_src/2,
                                  Y/2+w_src/2, 0, 0, dx, dy, 1.0)
 
     # Setup the mode solver.    
-    mode = emopt.modes.ModeTE(wavelength, eps, mu, src_line, n0=n_si, neigs=4)
+    mode = emopt2.modes.ModeTE(wavelength, eps, mu, src_line, n0=n_si, neigs=4)
 
     if(NOT_PARALLEL):
         print('Generating mode data...')
@@ -418,9 +418,9 @@ if __name__ == '__main__':
     ####################################################################################
     # Setup the mode match domain
     ####################################################################################
-    mm_line = emopt.misc.DomainCoordinates(w_pml, X-w_pml, Y/2.0+2.0, Y/2.0+2.0, 0, 0,
+    mm_line = emopt2.misc.DomainCoordinates(w_pml, X-w_pml, Y/2.0+2.0, Y/2.0+2.0, 0, 0,
                                            dx, dy, 1.0)
-    full_field = emopt.misc.DomainCoordinates(w_pml, X-w_pml, w_pml, Y-w_pml, 0.0, 0.0,
+    full_field = emopt2.misc.DomainCoordinates(w_pml, X-w_pml, w_pml, Y-w_pml, 0.0, 0.0,
                                               dx, dy, 1.0)
     sim.field_domains = [mm_line, full_field]
 
@@ -455,7 +455,7 @@ if __name__ == '__main__':
     callback = lambda x : plot_update(x, fom_list, sim, am)
 
     # setup and run the optimization!
-    opt = emopt.optimizer.Optimizer(am, design_params, tol=1e-5,
+    opt = emopt2.optimizer.Optimizer(am, design_params, tol=1e-5,
                                     callback_func=callback,
                                     opt_method='BFGS',
                                     Nmax=40)

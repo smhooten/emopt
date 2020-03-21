@@ -23,9 +23,9 @@ all: Grid.o Grid_ctypes.o FDTD.o FDTD_2D.o Grid.cpp Grid.hpp Grid_ctypes.cpp Gri
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o Grid.so Grid.o Grid_ctypes.o ${LDFLAGS}
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o FDTD.so FDTD.o ${LDFLAGS}
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o FDTD_2D.so FDTD_2D.o ${LDFLAGS}
-	cp Grid.so ../emopt
-	cp FDTD.so ../emopt
-	cp FDTD_2D.so ../emopt
+	cp Grid.so ../emopt2
+	cp FDTD.so ../emopt2
+	cp FDTD_2D.so ../emopt2
 
 Grid.o: Grid.cpp Grid.hpp
 	${CC} -c -fPIC Grid.cpp ${CXXFLAGS} -o Grid.o ${INCLUDES}
@@ -42,6 +42,6 @@ FDTD_2D.o: fdtd_2d.cpp fdtd_2d.hpp
 clean:
 	rm -f ./*.o
 	rm -f ./*.so
-	rm -f ../emopt/*.so
-	rm -f ../emopt/*.pyc
+	rm -f ../emopt2/*.so
+	rm -f ../emopt2/*.pyc
 

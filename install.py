@@ -35,7 +35,7 @@ from subprocess import call
 from argparse import ArgumentParser
 
 # EMopt parameters
-emopt_dep_file = ".emopt_deps"
+emopt2_dep_file = ".emopt2_deps"
 
 # Package Parameters
 EIGEN_VERSION = "3.3.7"
@@ -86,7 +86,7 @@ def write_deps_file(home_dir, include_dir, install_dir):
     of the installed dependencies. This is loaded by the setup.py script used
     to install EMopt.
     """
-    dep_fname = home_dir + '/' + emopt_dep_file
+    dep_fname = home_dir + '/' + emopt2_dep_file
     with open(dep_fname, 'w') as fdep:
         fdep.write('EIGEN_DIR=' + include_dir + '\n')
         fdep.write('BOOST_DIR=' + include_dir + '\n')
@@ -230,7 +230,7 @@ def install_deps():
     # setup install directory
     home_dir = os.path.expanduser('~')
     if(args.prefix == None):
-        install_dir = home_dir + '/.emopt/'
+        install_dir = home_dir + '/.emopt2/'
     else:
         install_dir = args.prefix
         print(install_dir)
