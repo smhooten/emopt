@@ -27,17 +27,17 @@ from builtins import object
 from .simulation import MaxwellSolver
 from .defs import FieldComponent
 from .misc import DomainCoordinates, RANK, MathDummy, NOT_PARALLEL, COMM, \
-info_message, warning_message, N_PROC, run_on_master, petsc4py, MPI
-from .fdtd_ctypes import libFDTD
-from .modes import ModeFullVector
-#import petsc4py
+info_message, warning_message, N_PROC, run_on_master
+from .fdtd_2d_cyl_ctypes import libFDTD
+from .modes import ModeTE, ModeTM
+import petsc4py
 import sys
-#petsc4py.init(sys.argv)
+petsc4py.init(sys.argv)
 
 from petsc4py import PETSc
 import numpy as np
 from math import pi
-#from mpi4py import MPI
+from mpi4py import MPI
 import sys
 
 __author__ = "Andrew Michaels"
@@ -46,51 +46,37 @@ __version__ = "2019.5.6"
 __maintainer__ = "Andrew Michaels"
 __status__ = "development"
 
-class SourceArray(object):
+class SourceArray_TE(object):
     """A container for source arrays and its associated parameters.
 
     Parameters
     ----------
-    Jx : numpy.ndarray
-        The x-component of the electric current density
-    Jy : numpy.ndarray
-        The x-component of the electric current density
     Jz : numpy.ndarray
         The x-component of the electric current density
     Mx : numpy.ndarray
         The x-component of the magnetic current density
     My : numpy.ndarray
         The x-component of the magnetic current density
-    Mz : numpy.ndarray
-        The x-component of the magnetic current density
-    i0 : int
-        The LOCAL starting z index of the source arrays
     j0 : int
         The LOCAL starting y index of the source arrays
     k0 : int
-        The LOCAL starting k index of the source arrays
-    I : int
-        The z width of the source array
+        The LOCAL starting z index of the source arrays
     J : int
         The y width of the source array
     K : int
-        The z width of the source array
+        The x width of the source array
     """
-    def __init__(self, Jx, Jy, Jz, Mx, My, Mz, i0, j0, k0, I, J, K):
-        self.Jx = Jx
-        self.Jy = Jy
+    def __init__(self, Jz, Mx, My, j0, k0, J, K):
         self.Jz = Jz
         self.Mx = Mx
         self.My = My
-        self.Mz = Mz
-        self.i0 = i0
+
         self.j0 = j0
         self.k0 = k0
-        self.I  = I
         self.J  = J
         self.K  = K
 
-class FDTD(MaxwellSolver):
+class FDTD_TE(MaxwellSolver):
     """A 3D continuous-wave finite difference time domain (CW-FDTD) solver.
 
     This class implements a continuous-wave finite difference time domain
@@ -155,11 +141,6 @@ class FDTD(MaxwellSolver):
     complex_eps : boolean (optional)
         Tells the solver if the permittivity is complex-valued. Setting this to
         False can speed up the solver when run on fewer cores (default = False)
-    dist_method : str
-        Method for distributing the underlying field arrays. Options are: 'auto', 'x', 'y',
-        'z'. 'auto' will automatically determine the optimal distribution of the arrays
-        between the processors. 'x', 'y', and 'z' will force the array to be distributed as
-        slices arranged along the x, y, or z axis respectively.
 
     Attributes
     ----------
@@ -233,9 +214,9 @@ class FDTD(MaxwellSolver):
         The height of the simulation excluding PMLs.
     """
 
-    def __init__(self, X, Y, Z, dx, dy, dz, wavelength, rtol=1e-6, nconv=None,
-                 min_rindex=1.0, complex_eps=False, dist_method='auto'):
-        super(FDTD, self).__init__(3)
+    def __init__(self, X, Y, dx, dy, wavelength, rtol=1e-6, nconv=None,
+                 min_rindex=1.0, complex_eps=False):
+        super(FDTD_TE, self).__init__(2)
 
         if(nconv is None):
             nconv = N_PROC*10
@@ -247,44 +228,30 @@ class FDTD(MaxwellSolver):
 
         self._dx = dx
         self._dy = dy
-        self._dz = dz
 
         Nx = int(np.ceil(X/dx)+1); self._Nx = Nx
         Ny = int(np.ceil(Y/dy)+1); self._Ny = Ny
-        Nz = int(np.ceil(Z/dz)+1); self._Nz = Nz
 
         self._X = dx * (Nx-1)
         self._Y = dy * (Ny-1)
-        self._Z = dz * (Nz-1)
 
         self._wavelength = wavelength
         self._R = wavelength/(2*pi)
 
         ## Courant number < 1
+        ## Why are some problems unstable for larger Sc?
         self._Sc = 0.95
         self._min_rindex = min_rindex
-        dt = self._Sc * np.min([dx, dy, dz])/self._R / np.sqrt(3) * min_rindex
+        # sqrt(3) needed or sqrt(2)?
+        dt = self._Sc * np.min([dx, dy])/self._R / np.sqrt(2) * min_rindex
         self._dt = dt
 
 
         # stencil_type=1 => box
         # stencil_width=1 => 1 element ghosted region
         # boundary_type=1 => ghosted simulation boundary (padded everywhere)
-        if(dist_method == 'auto'):
-            da = PETSc.DA().create(sizes=[Nx, Ny, Nz], dof=1, stencil_type=0,
-                                   stencil_width=1, boundary_type=1)
-        elif(dist_method == 'x'):
-            da = PETSc.DA().create(sizes=[Nx, Ny, Nz], proc_sizes=[1,1,N_PROC],
-                                   dof=1, stencil_type=0,
-                                   stencil_width=1, boundary_type=1)
-        elif(dist_method == 'y'):
-            da = PETSc.DA().create(sizes=[Nx, Ny, Nz], proc_sizes=[1,N_PROC,1],
-                                   dof=1, stencil_type=0,
-                                   stencil_width=1, boundary_type=1)
-        elif(dist_method == 'z'):
-            da = PETSc.DA().create(sizes=[Nx, Ny, Nz], proc_sizes=[N_PROC,1,1],
-                                   dof=1, stencil_type=0,
-                                   stencil_width=1, boundary_type=1)
+        da = PETSc.DA().create(sizes=[Nx, Ny], dof=1, stencil_type=0,
+                               stencil_width=1, boundary_type=1)
 
         self._da = da
         ## Setup the distributed array. Currently, we need 2 for each field
@@ -293,112 +260,95 @@ class FDTD(MaxwellSolver):
         self._vglobal = da.createGlobalVec() # global for data sharing
 
         pos, lens = da.getCorners()
-        k0, j0, i0 = pos
-        K, J, I = lens
+        k0, j0 = pos
+        K, J = lens
 
         # field arrays
-        self._Ex = np.zeros(((K+2)*(J+2)*(I+2),), dtype=np.double)
-        self._Ey = np.zeros(((K+2)*(J+2)*(I+2),), dtype=np.double)
-        self._Ez = np.zeros(((K+2)*(J+2)*(I+2),), dtype=np.double)
-        self._Hx = np.zeros(((K+2)*(J+2)*(I+2),), dtype=np.double)
-        self._Hy = np.zeros(((K+2)*(J+2)*(I+2),), dtype=np.double)
-        self._Hz = np.zeros(((K+2)*(J+2)*(I+2),), dtype=np.double)
+        self._Ez = np.zeros(((K+2)*(J+2),), dtype=np.double)
+        self._Hx = np.zeros(((K+2)*(J+2),), dtype=np.double)
+        self._Hy = np.zeros(((K+2)*(J+2),), dtype=np.double)
 
         # material arrays -- global since we dont need to pass values around
-        self._eps_x = da.createGlobalVec()
-        self._eps_y = da.createGlobalVec()
         self._eps_z = da.createGlobalVec()
         self._mu_x = da.createGlobalVec()
         self._mu_y = da.createGlobalVec()
-        self._mu_z = da.createGlobalVec()
 
         # Frequency-domain field arrays for forward simulation
         # Two sets of fields for two snapshots in time. The frequency-domain
         # fields are stored in the t0 field set
-        self._Ex_fwd_t0 = da.createGlobalVec()
-        self._Ey_fwd_t0 = da.createGlobalVec()
         self._Ez_fwd_t0 = da.createGlobalVec()
         self._Hx_fwd_t0 = da.createGlobalVec()
         self._Hy_fwd_t0 = da.createGlobalVec()
-        self._Hz_fwd_t0 = da.createGlobalVec()
 
-        self._Ex_fwd_t1 = da.createGlobalVec()
-        self._Ey_fwd_t1 = da.createGlobalVec()
         self._Ez_fwd_t1 = da.createGlobalVec()
         self._Hx_fwd_t1 = da.createGlobalVec()
         self._Hy_fwd_t1 = da.createGlobalVec()
-        self._Hz_fwd_t1 = da.createGlobalVec()
 
         # Frequency-domain field arrays for ajdoint simulation
-        self._Ex_adj_t0 = da.createGlobalVec()
-        self._Ey_adj_t0 = da.createGlobalVec()
         self._Ez_adj_t0 = da.createGlobalVec()
         self._Hx_adj_t0 = da.createGlobalVec()
         self._Hy_adj_t0 = da.createGlobalVec()
-        self._Hz_adj_t0 = da.createGlobalVec()
 
-        self._Ex_adj_t1 = da.createGlobalVec()
-        self._Ey_adj_t1 = da.createGlobalVec()
         self._Ez_adj_t1 = da.createGlobalVec()
         self._Hx_adj_t1 = da.createGlobalVec()
         self._Hy_adj_t1 = da.createGlobalVec()
-        self._Hz_adj_t1 = da.createGlobalVec()
 
 
         # setup the C library which takes care of the E and H updates
         # Nothing complicated here -- just passing all of the sim parameters
         # and work vectors over to the c library
-        self._libfdtd = libFDTD.FDTD_new()
-        libFDTD.FDTD_set_wavelength(self._libfdtd, wavelength)
-        libFDTD.FDTD_set_physical_dims(self._libfdtd, X, Y, Z, dx, dy, dz)
-        libFDTD.FDTD_set_grid_dims(self._libfdtd, Nx, Ny, Nz)
-        libFDTD.FDTD_set_local_grid(self._libfdtd, k0, j0, i0, K, J, I)
-        libFDTD.FDTD_set_dt(self._libfdtd, dt)
-        libFDTD.FDTD_set_field_arrays(self._libfdtd,
-                self._Ex, self._Ey, self._Ez,
-                self._Hx, self._Hy, self._Hz)
-        libFDTD.FDTD_set_mat_arrays(self._libfdtd,
-                self._eps_x.getArray(), self._eps_y.getArray(), self._eps_z.getArray(),
-                self._mu_x.getArray(), self._mu_y.getArray(), self._mu_z.getArray())
+        self._libfdtd = libFDTD.FDTD_TE_new()
+        libFDTD.FDTD_TE_set_wavelength(self._libfdtd, wavelength)
+        libFDTD.FDTD_TE_set_physical_dims(self._libfdtd, X, Y, dx, dy)
+        libFDTD.FDTD_TE_set_grid_dims(self._libfdtd, Nx, Ny)
+        libFDTD.FDTD_TE_set_local_grid(self._libfdtd, k0, j0, K, J)
+        libFDTD.FDTD_TE_set_dt(self._libfdtd, dt)
+        libFDTD.FDTD_TE_set_field_arrays(self._libfdtd,
+                self._Ez,
+                self._Hx, self._Hy)
+        libFDTD.FDTD_TE_set_mat_arrays(self._libfdtd,
+                self._eps_z.getArray(),
+                self._mu_x.getArray(), self._mu_y.getArray())
 
         # set whether or not materials are complex valued
-        libFDTD.FDTD_set_complex_eps(self._libfdtd, complex_eps)
+        libFDTD.FDTD_TE_set_complex_eps(self._libfdtd, complex_eps)
 
         ## Setup default PML properties
         w_pml = 15
+        # Thicker PML seems to work better
         self._w_pml = [w_pml*dx, w_pml*dx, \
-                      w_pml*dy, w_pml*dy, \
-                      w_pml*dz, w_pml*dz]
+                      w_pml*dy, w_pml*dy]
         self._w_pml_xmin = w_pml
         self._w_pml_xmax = w_pml
         self._w_pml_ymin = w_pml
         self._w_pml_ymax = w_pml
-        self._w_pml_zmin = w_pml
-        self._w_pml_zmax = w_pml
 
-        self._pml_sigma = 3.0
-        self._pml_alpha = 0.0
-        self._pml_kappa = 1.0
+        #self._pml_sigma = 3.0
+        #self._pml_alpha = 0.0
+        #self._pml_kappa = 2.0
+        #self._pml_pow = 3.0
+        self._pml_sigma = 4.0
+        self._pml_alpha = 1.0
+        self._pml_kappa = 3.0
         self._pml_pow = 3.0
 
-        libFDTD.FDTD_set_pml_widths(self._libfdtd, w_pml, w_pml,
-                                                   w_pml, w_pml,
+        libFDTD.FDTD_TE_set_pml_widths(self._libfdtd, w_pml, w_pml,
                                                    w_pml, w_pml)
-        libFDTD.FDTD_set_pml_properties(self._libfdtd, self._pml_sigma,
+        libFDTD.FDTD_TE_set_pml_properties(self._libfdtd, self._pml_sigma,
                                         self._pml_alpha, self._pml_kappa,
                                         self._pml_pow)
-        libFDTD.FDTD_build_pml(self._libfdtd)
+        libFDTD.FDTD_TE_build_pml(self._libfdtd)
 
         ## Setup the source properties
-        Nlambda = wavelength / np.min([dx, dy, dz]) / self._min_rindex
-        Ncycle = Nlambda * np.sqrt(3)
+        Nlambda = wavelength / np.min([dx, dy]) / self._min_rindex
+        Ncycle = Nlambda * np.sqrt(2)
         self._Nlambda = Nlambda # spatial steps per wavelength
         self._Ncycle = Ncycle #  time steps per period of oscillation
 
         self._src_T    = Ncycle * 20.0 * self._dt
         self._src_min  = 1e-4
         self.Nmax = Nlambda*500
-        libFDTD.FDTD_set_source_properties(self._libfdtd, self._src_T,
+        libFDTD.FDTD_TE_set_source_properties(self._libfdtd, self._src_T,
                                            self._src_min)
 
         self._rtol = rtol
@@ -409,7 +359,7 @@ class FDTD(MaxwellSolver):
         # vectors. We exclude PMLs from these checks. Consider moving this to
         # C++ if this ever gets slow (possible for larger problems?)
         n_pts = int(nconv / N_PROC)
-        self._conv_pts = np.arange(0, I*J*K, int(I*J*K/n_pts))
+        self._conv_pts = np.arange(0, J*K, int(J*K/n_pts))
         self._nconv = len(self._conv_pts)
 
         self._sources = []
@@ -421,8 +371,8 @@ class FDTD(MaxwellSolver):
         self._vn = da.createNaturalVec()
 
         # default boundary conditions = PEC
-        self._bc = ['0', '0', '0']
-        libFDTD.FDTD_set_bc(self._libfdtd, ''.join(self._bc).encode('ascii'))
+        self._bc = ['0', '0']
+        libFDTD.FDTD_TE_set_bc(self._libfdtd, ''.join(self._bc).encode('ascii'))
 
         # make room for eps and mu
         self._eps = None
@@ -430,15 +380,11 @@ class FDTD(MaxwellSolver):
 
         # defome a GhostComm object which we will use to share edge values of
         # the fields between processors
-        self._gc = GhostComm(k0, j0, i0, K, J, I, Nx, Ny, Nz)
-
-        # keep track of number of simulations
-        self.forward_count = 0
-        self.adjoint_count = 0
+        self._gc = GhostComm(k0, j0, K, J, Nx, Ny)
 
     @property
     def wavelength(self):
-        self._wavelength = wavelength
+        return self._wavelength
 
     @wavelength.setter
     def wavelength(self, wlen):
@@ -447,12 +393,12 @@ class FDTD(MaxwellSolver):
         else:
             self._wavelength = wlen
             self._R = wlen/2/pi
-            libFDTD.FDTD_set_wavelength(self._libfdtd, wlen)
+            libFDTD.FDTD_TE_set_wavelength(self._libfdtd, wlen)
 
-            ds = np.min([self._dx, self._dy, self._dz])
-            dt = self._Sc * ds/self._R / np.sqrt(3) * self._min_rindex
+            ds = np.min([self._dx, self._dy])
+            dt = self._Sc * ds/self._R / np.sqrt(2) * self._min_rindex
             self._dt = dt
-            libFDTD.FDTD_set_dt(self._libfdtd, dt)
+            libFDTD.FDTD_TE_set_dt(self._libfdtd, dt)
 
     @property
     def X(self):
@@ -463,10 +409,6 @@ class FDTD(MaxwellSolver):
         return self._Y
 
     @property
-    def Z(self):
-        return self._Z
-
-    @property
     def dx(self):
         return self._dx
 
@@ -475,20 +417,12 @@ class FDTD(MaxwellSolver):
         return self._dy
 
     @property
-    def dz(self):
-        return self._dz
-
-    @property
     def Nx(self):
         return self._Nx
 
     @property
     def Ny(self):
         return self._Ny
-
-    @property
-    def Nz(self):
-        return self._Nz
 
     @property
     def eps(self):
@@ -508,10 +442,10 @@ class FDTD(MaxwellSolver):
             warning_message('A courant number greater than 1 will lead to ' \
                             'instability.', 'emopt.fdtd')
         self._Sc = Sc
-        ds = np.min([self._dx, self._dy, self._dz])
-        dt = self._Sc * ds/self._R / np.sqrt(3) * self._min_rindex
+        ds = np.min([self._dx, self._dy])
+        dt = self._Sc * ds/self._R / np.sqrt(2) * self._min_rindex
         self._dt = dt
-        libFDTD.FDTD_set_dt(self._libfdtd, dt)
+        libFDTD.FDTD_TE_set_dt(self._libfdtd, dt)
 
     @property
     def rtol(self):
@@ -533,7 +467,7 @@ class FDTD(MaxwellSolver):
             raise ValueError('Minimum source value must be greater than zero.')
 
         self._src_min = new_min
-        libFDTD.FDTD_set_source_properties(self._libfdtd, self._src_T,
+        libFDTD.FDTD_TE_set_source_properties(self._libfdtd, self._src_T,
                                            self._src_min)
 
     @property
@@ -557,11 +491,11 @@ class FDTD(MaxwellSolver):
                             'Simulations may not converge.',
                             'emopt.fdtd')
             self._src_T = new_T
-            libFDTD.FDTD_set_source_properties(self._libfdtd, self._src_T,
+            libFDTD.FDTD_TE_set_source_properties(self._libfdtd, self._src_T,
                                                self._src_min)
         else:
             self._src_T = new_T
-            libFDTD.FDTD_set_source_properties(self._libfdtd, self._src_T,
+            libFDTD.FDTD_TE_set_source_properties(self._libfdtd, self._src_T,
                                                self._src_min)
     @property
     def bc(self):
@@ -569,7 +503,7 @@ class FDTD(MaxwellSolver):
 
     @bc.setter
     def bc(self, newbc):
-        if(len(newbc) != 3):
+        if(len(newbc) != 2):
             raise ValueError('Incorrect number of boundary conditions specified!')
 
         for bc in newbc:
@@ -580,7 +514,7 @@ class FDTD(MaxwellSolver):
                                           'implemented')
 
         self._bc = list(newbc)
-        libFDTD.FDTD_set_bc(self._libfdtd, ''.join(self._bc).encode('ascii'))
+        libFDTD.FDTD_TE_set_bc(self._libfdtd, ''.join(self._bc).encode('ascii'))
 
     @property
     def w_pml(self):
@@ -588,32 +522,26 @@ class FDTD(MaxwellSolver):
 
     @w_pml.setter
     def w_pml(self, w_pml):
-        if(len(w_pml) != 6):
+        if(len(w_pml) != 4):
             raise ValueError('Incorrect number of pml widths specified. You ' \
-                             'must specify 6 widths (xmin, xmax, ymin, ymax, '\
-                             'zmin, zmax).')
+                             'must specify 4 widths (xmin, xmax, ymin, ymax).')
 
-        dx = self._dx; dy = self._dy; dz = self._dz
+        dx = self._dx; dy = self._dy;
 
         self._w_pml_xmin = int(w_pml[0]/dx)
         self._w_pml_xmax = int(w_pml[1]/dx)
         self._w_pml_ymin = int(w_pml[2]/dy)
         self._w_pml_ymax = int(w_pml[3]/dy)
-        self._w_pml_zmin = int(w_pml[4]/dz)
-        self._w_pml_zmax = int(w_pml[5]/dz)
 
         self._w_pml = [self._w_pml_xmin*dx, self._w_pml_xmax*dx, \
-                       self._w_pml_ymin*dy, self._w_pml_ymax*dy, \
-                       self._w_pml_zmin*dz, self._w_pml_zmax*dz]
+                       self._w_pml_ymin*dy, self._w_pml_ymax*dy]
 
         # rebuild the PMLs
-        libFDTD.FDTD_set_pml_widths(self._libfdtd, self._w_pml_xmin,
+        libFDTD.FDTD_TE_set_pml_widths(self._libfdtd, self._w_pml_xmin,
                                                    self._w_pml_xmax,
                                                    self._w_pml_ymin,
-                                                   self._w_pml_ymax,
-                                                   self._w_pml_zmin,
-                                                   self._w_pml_zmax)
-        libFDTD.FDTD_build_pml(self._libfdtd)
+                                                   self._w_pml_ymax)
+        libFDTD.FDTD_TE_build_pml(self._libfdtd)
 
     @property
     def w_pml_xmin(self):
@@ -632,24 +560,12 @@ class FDTD(MaxwellSolver):
         return self._w_pml_ymax
 
     @property
-    def w_pml_zmin(self):
-        return self._w_pml_zmin
-
-    @property
-    def w_pml_zmax(self):
-        return self._w_pml_zmax
-
-    @property
     def X_real(self):
         return self._X-self._w_pml[0]-self._w_pml[1]
 
     @property
     def Y_real(self):
         return self._Y-self._w_pml[2]-self._w_pml[3]
-
-    @property
-    def Z_real(self):
-        return self._Z-self._w_pml[4]-self._w_pml[5]
 
     def set_materials(self, eps, mu):
         self._eps = eps
@@ -665,23 +581,19 @@ class FDTD(MaxwellSolver):
         #   (global start indices), (local start indices), 
         #        (domain start indices), (widths of overlap)
         pos, lens = self._da.getCorners()
-        k0, j0, i0 = pos
-        K, J, I = lens
+        k0, j0 = pos
+        K, J = lens
 
         # determine the local portion of the array that is relevant
         # First: don't do anything if this process does not contain the
         # provided source arrays
-        if(i0 >= domain.i2):       return None, None, None, None
-        elif(i0 + I <= domain.i1): return None, None, None, None
-        elif(j0 >= domain.j2):     return None, None, None, None
+        if(j0 >= domain.j2):       return None, None, None, None
         elif(j0 + J <= domain.j1): return None, None, None, None
         elif(k0 >= domain.k2):     return None, None, None, None
         elif(k0 + K <= domain.k1): return None, None, None, None
 
-        imin = 0; jmin = 0; kmin = 0
-        imax = 0; jmax = 0; kmax = 0
-        if(i0 + I > domain.i2): imax = domain.i2
-        else: imax = i0 + I
+        jmin = 0; kmin = 0
+        jmax = 0; kmax = 0
 
         if(j0 + J > domain.j2): jmax = domain.j2
         else: jmax = j0 + J
@@ -689,23 +601,19 @@ class FDTD(MaxwellSolver):
         if(k0 + K > domain.k2): kmax = domain.k2
         else: kmax = k0 + K
 
-        if(i0 > domain.i1): imin = i0
-        else: imin = domain.i1
-
         if(j0 > domain.j1): jmin = j0
         else: jmin = domain.j1
 
         if(k0 > domain.k1): kmin = k0
         else: kmin = domain.k1
 
-        id1 = imin - domain.i1
         jd1 = jmin - domain.j1
         kd1 = kmin - domain.k1
 
-        return (imin, jmin, kmin), \
-               (imin - i0, jmin - j0, kmin - k0), \
-               (id1, jd1, kd1), \
-               (imax - imin, jmax - jmin, kmax - kmin)
+        return (jmin, kmin), \
+               (jmin - j0, kmin - k0), \
+               (jd1, kd1), \
+               (jmax - jmin, kmax - kmin)
 
     def __set_sources(self, src, domain, adjoint=False):
         ## Set the source arrays. The process is identical for forward and
@@ -714,43 +622,37 @@ class FDTD(MaxwellSolver):
         # with the space owned by this processor, copying that piece, and then
         # submitting the cropped arrays to libFDTD which will convert the
         # complex-valued source to an amplitude and phase.
-        Jx, Jy, Jz, Mx, My, Mz = src
+        Jz, Mx, My = src
 
         g_inds, l_inds, d_inds, sizes = self.__get_local_domain_overlap(domain)
         if(g_inds == None): return # no overlap between source and this chunk
 
-        id1 = d_inds[0]; id2 = d_inds[0] + sizes[0]
-        jd1 = d_inds[1]; jd2 = d_inds[1] + sizes[1]
-        kd1 = d_inds[2]; kd2 = d_inds[2] + sizes[2]
+        jd1 = d_inds[0]; jd2 = d_inds[0] + sizes[0];
+        kd1 = d_inds[1]; kd2 = d_inds[1] + sizes[1];
 
         # get the pieces which are relevant to this processor
-        Jxs = np.copy(Jx[id1:id2, jd1:jd2, kd1:kd2]).ravel()
-        Jys = np.copy(Jy[id1:id2, jd1:jd2, kd1:kd2]).ravel()
-        Jzs = np.copy(Jz[id1:id2, jd1:jd2, kd1:kd2]).ravel()
-        Mxs = np.copy(Mx[id1:id2, jd1:jd2, kd1:kd2]).ravel()
-        Mys = np.copy(My[id1:id2, jd1:jd2, kd1:kd2]).ravel()
-        Mzs = np.copy(Mz[id1:id2, jd1:jd2, kd1:kd2]).ravel()
+        Jzs = np.copy(Jz[jd1:jd2, kd1:kd2]).ravel()
+        Mxs = np.copy(Mx[jd1:jd2, kd1:kd2]).ravel()
+        Mys = np.copy(My[jd1:jd2, kd1:kd2]).ravel()
 
-        src = SourceArray(Jxs, Jys, Jzs,
-                          Mxs, Mys, Mzs,
-                          l_inds[0], l_inds[1], l_inds[2],
-                          sizes[0], sizes[1], sizes[2])
+        src = SourceArray_TE(Jzs,
+                             Mxs, Mys,
+                             l_inds[0], l_inds[1],
+                             sizes[0], sizes[1])
 
-        print(src.I)
         print(src.J)
         print(src.K)
-        print(src.i0)
         print(src.j0)
         print(src.k0)
 
         if(adjoint): self._adj_sources.append(src)
         else: self._sources.append(src)
 
-        libFDTD.FDTD_add_source(self._libfdtd,
-                                src.Jx, src.Jy, src.Jz,
-                                src.Mx, src.My, src.Mz,
-                                src.i0, src.j0, src.k0,
-                                src.I, src.J, src.K,
+        libFDTD.FDTD_TE_add_source(self._libfdtd,
+                                src.Jz,
+                                src.Mx, src.My,
+                                src.j0, src.k0,
+                                src.J, src.K,
                                 True)
 
     def set_sources(self, src, domain, mindex=0):
@@ -769,25 +671,21 @@ class FDTD(MaxwellSolver):
         ----------
         src : tuple or modes.ModeFullVector
             The source arrays or mode object containing source data
-        domain : misc.DomainCoordinates
+        domain : misc.DomainCoordinates2D
             The domain which specifies where the source is located
         mindex : int (optional)
             The mode source index. This is only relevant if using a
             ModeFullVector object to set the sources. (default = 0)
         """
-        if(type(src) == ModeFullVector):
-            Jxs, Jys, Jzs, Mxs, Mys, Mzs = src.get_source(mindex, self._dx,
-                                                                  self._dy,
-                                                                  self._dz)
+        if(type(src) == ModeTE):
+            Jzs, Mxs, Mys = src.get_source(mindex, self._dx,
+                                                   self._dy)
 
-            Jxs = COMM.bcast(Jxs, root=0)
-            Jys = COMM.bcast(Jys, root=0)
             Jzs = COMM.bcast(Jzs, root=0)
             Mxs = COMM.bcast(Mxs, root=0)
             Mys = COMM.bcast(Mys, root=0)
-            Mzs = COMM.bcast(Mzs, root=0)
 
-            src_arrays = (Jxs, Jys, Jzs, Mxs, Mys, Mzs)
+            src_arrays = (Jzs, Mxs, Mys)
         else:
             src_arrays = src
 
@@ -810,7 +708,7 @@ class FDTD(MaxwellSolver):
         ---------
         src : list
             List containing two lists: 1 with sets of source arrays and on with
-            DomainCoordinates which correspond to those source array sets.
+            DomainCoordinates2D which correspond to those source array sets.
         """
         # clear the old sources
         self.clear_adjoint_sources()
@@ -829,7 +727,7 @@ class FDTD(MaxwellSolver):
         src : list or tuple of numpy.ndarray
             The list/tuple of source arrays in the following order: (Jx, Jy, Jz,
             Mx, My, Mz)
-        domain : misc.DomainCoordinates
+        domain : misc.DomainCoordinates2D
             The domain which specifies the location of the source arrays
         """
         self.__set_sources(src, domain, adjoint=True)
@@ -859,32 +757,21 @@ class FDTD(MaxwellSolver):
         mu = self._mu
 
         pos, lens = self._da.getCorners()
-        k0, j0, i0 = pos
-        K, J, I = lens
+        k0, j0 = pos
+        K, J = lens
 
-        eps.get_values(k0, k0+K, j0, j0+J, i0, i0+I,
-                       sx=0.5, sy=0.0, sz=-0.5,
-                       arr=self._eps_x.getArray())
-
-        eps.get_values(k0, k0+K, j0, j0+J, i0, i0+I,
-                       sx=0.0, sy=0.5, sz=-0.5,
-                       arr=self._eps_y.getArray())
-
-        eps.get_values(k0, k0+K, j0, j0+J, i0, i0+I,
-                       sx=0.0, sy=0.0, sz=0.0,
+        eps.get_values(k0, k0+K, j0, j0+J,
+                       sx=0.0, sy=0.0,
                        arr=self._eps_z.getArray())
 
-        mu.get_values(k0, k0+K, j0, j0+J, i0, i0+I,
-                      sx=0.0, sy=0.5, sz=0.0,
+        mu.get_values(k0, k0+K, j0, j0+J,
+                      sx=0.0, sy=0.5,
                       arr=self._mu_x.getArray())
 
-        mu.get_values(k0, k0+K, j0, j0+J, i0, i0+I,
-                       sx=0.5, sy=0.0, sz=0.0,
+        mu.get_values(k0, k0+K, j0, j0+J,
+                       sx=0.5, sy=0.0,
                        arr=self._mu_y.getArray())
 
-        mu.get_values(k0, k0+K, j0, j0+J, i0, i0+I,
-                       sx=0.5, sy=0.5, sz=-0.5,
-                       arr=self._mu_z.getArray())
 
     def update(self, bbox=None):
         """Update the permittivity and permeability distribution.
@@ -923,80 +810,50 @@ class FDTD(MaxwellSolver):
             mu = self._mu
 
             pos, lens = self._da.getCorners()
-            k0, j0, i0 = pos
-            K, J, I = lens
+            k0, j0 = pos
+            K, J = lens
 
-            bbox = DomainCoordinates(bbox[0], bbox[1], bbox[2], bbox[3],
-                                     bbox[4], bbox[5], self._dx,
-                                     self._dy, self._dz)
+            #bbox = DomainCoordinates2D(bbox[0], bbox[1], bbox[2], bbox[3],
+            #                         self._dx, self._dy)
+            bbox = DomainCoordinates(bbox[0], bbox[1], bbox[2], bbox[3], 0.0, 0.0,
+                                     self._dx, self._dy, 1.0)
+
             g_inds, l_inds, d_inds, sizes = self.__get_local_domain_overlap(bbox)
             if(g_inds == None): return # no overlap between source and this chunk
 
-            temp = np.zeros([sizes[0], sizes[1], sizes[2]], dtype=np.complex128)
+            temp = np.zeros([sizes[0], sizes[1]], dtype=np.complex128)
 
-            li = slice(l_inds[0], l_inds[0]+sizes[0])
-            lj = slice(l_inds[1], l_inds[1]+sizes[1])
-            lk = slice(l_inds[2], l_inds[2]+sizes[2])
-
-            # update eps_x
-            eps_x = self._eps_x.getArray()
-            eps_x = np.reshape(eps_x, [I,J,K])
-            eps.get_values(g_inds[2], g_inds[2]+sizes[2],
-                           g_inds[1], g_inds[1]+sizes[1],
-                           g_inds[0], g_inds[0]+sizes[0],
-                           sx=0.5, sy=0.0, sz=-0.5,
-                           arr=temp)
-            eps_x[li, lj, lk] = temp
-
-            # update eps_y
-            eps_y = self._eps_y.getArray()
-            eps_y = np.reshape(eps_y, [I,J,K])
-            eps.get_values(g_inds[2], g_inds[2]+sizes[2],
-                           g_inds[1], g_inds[1]+sizes[1],
-                           g_inds[0], g_inds[0]+sizes[0],
-                           sx=0.0, sy=0.5, sz=-0.5,
-                           arr=temp)
-            eps_y[li, lj, lk] = temp
+            lj = slice(l_inds[0], l_inds[0]+sizes[0])
+            lk = slice(l_inds[1], l_inds[1]+sizes[1])
 
             # update eps_z
             eps_z = self._eps_z.getArray()
-            eps_z = np.reshape(eps_z, [I,J,K])
-            eps.get_values(g_inds[2], g_inds[2]+sizes[2],
-                           g_inds[1], g_inds[1]+sizes[1],
+            eps_z = np.reshape(eps_z, [J,K])
+            eps.get_values(g_inds[1], g_inds[1]+sizes[1],
                            g_inds[0], g_inds[0]+sizes[0],
-                           sx=0.0, sy=0.0, sz=0.0,
+                           sx=0.0, sy=0.0,
                            arr=temp)
-            eps_z[li, lj, lk] = temp
+            eps_z[lj, lk] = temp
+
 
             # update mu_x
             mu_x = self._mu_x.getArray()
-            mu_x = np.reshape(mu_x, [I,J,K])
-            mu.get_values(g_inds[2], g_inds[2]+sizes[2],
-                          g_inds[1], g_inds[1]+sizes[1],
+            mu_x = np.reshape(mu_x, [J,K])
+            mu.get_values(g_inds[1], g_inds[1]+sizes[1],
                           g_inds[0], g_inds[0]+sizes[0],
-                          sx=0.0, sy=0.5, sz=0.0,
+                          sx=0.0, sy=0.5,
                           arr=temp)
-            mu_x[li, lj, lk] = temp
+            mu_x[lj, lk] = temp
 
             # update mu_y
             mu_y = self._mu_y.getArray()
-            mu_y = np.reshape(mu_y, [I,J,K])
-            mu.get_values(g_inds[2], g_inds[2]+sizes[2],
-                          g_inds[1], g_inds[1]+sizes[1],
+            mu_y = np.reshape(mu_y, [J,K])
+            mu.get_values(g_inds[1], g_inds[1]+sizes[1],
                           g_inds[0], g_inds[0]+sizes[0],
-                          sx=0.5, sy=0.0, sz=0.0,
+                          sx=0.5, sy=0.0,
                           arr=temp)
-            mu_y[li, lj, lk] = temp
+            mu_y[lj, lk] = temp
 
-            # update mu_z
-            mu_z = self._mu_z.getArray()
-            mu_z = np.reshape(mu_z, [I,J,K])
-            mu.get_values(g_inds[2], g_inds[2]+sizes[2],
-                          g_inds[1], g_inds[1]+sizes[1],
-                          g_inds[0], g_inds[0]+sizes[0],
-                          sx=0.5, sy=0.5, sz=-0.5,
-                          arr=temp)
-            mu_z[li, lj, lk] = temp
 
     def __solve(self):
         ## Solve Maxwell's equations. This process is identical for the forward
@@ -1007,8 +864,7 @@ class FDTD(MaxwellSolver):
         R = self._wavelength/(2*pi)
         odx = R/self._dx
         ody = R/self._dy
-        odz = R/self._dz
-        Nx, Ny, Nz = self._Nx, self._Ny, self._Nz
+        Nx, Ny = self._Nx, self._Ny
 
         COMM.Barrier()
 
@@ -1016,21 +872,21 @@ class FDTD(MaxwellSolver):
         dt = self._dt
 
         pos, lens = self._da.getCorners()
-        k0, j0, i0 = pos
-        K, J, I = lens
+        k0, j0 = pos
+        K, J = lens
 
         # Reset field values, pmls, etc
-        libFDTD.FDTD_reset_pml(self._libfdtd)
-        self._Ex.fill(0); self._Ey.fill(0); self._Ez.fill(0)
-        self._Hx.fill(0); self._Hy.fill(0); self._Hz.fill(0)
+        libFDTD.FDTD_TE_reset_pml(self._libfdtd)
+        self._Ez.fill(0)
+        self._Hx.fill(0); self._Hy.fill(0);
 
         da = self._da
         Tn = np.int(self._Ncycle*3/4)
         p = 0
 
-        Ex0 = np.zeros(self._nconv); Ey0 = np.zeros(self._nconv); Ez0 = np.zeros(self._nconv)
-        Ex1 = np.zeros(self._nconv); Ey1 = np.zeros(self._nconv); Ez1 = np.zeros(self._nconv)
-        Ex2 = np.zeros(self._nconv); Ey2 = np.zeros(self._nconv); Ez2 = np.zeros(self._nconv)
+        Ez0 = np.zeros(self._nconv)
+        Ez1 = np.zeros(self._nconv)
+        Ez2 = np.zeros(self._nconv)
 
         phi0 = np.zeros(self._nconv)
         phi1 = np.zeros(self._nconv)
@@ -1064,16 +920,13 @@ class FDTD(MaxwellSolver):
                 break
 
 
-            libFDTD.FDTD_update_H(self._libfdtd, n, n*dt)
+            libFDTD.FDTD_TE_update_H(self._libfdtd, n, n*dt)
 
             self._gc.update_local_vector(self._Hx)
             self._gc.update_local_vector(self._Hy)
-            self._gc.update_local_vector(self._Hz)
 
-            libFDTD.FDTD_update_E(self._libfdtd, n, (n+0.5)*dt)
+            libFDTD.FDTD_TE_update_E(self._libfdtd, n, (n+0.5)*dt)
 
-            self._gc.update_local_vector(self._Ex)
-            self._gc.update_local_vector(self._Ey)
             self._gc.update_local_vector(self._Ez)
 
             if(p == Tn-1):
@@ -1088,44 +941,22 @@ class FDTD(MaxwellSolver):
                     conv_index = self._conv_pts[q]
 
                     # start with Ex
-                    Ex0[q] = Ex1[q]
-                    Ex1[q] = Ex2[q]
-                    Ex2[q] = np.real(self._Ex[conv_index])
-
-                    Ey0[q] = Ey1[q]
-                    Ey1[q] = Ey2[q]
-                    Ey2[q] = np.real(self._Ey[conv_index])
-
                     Ez0[q] = Ez1[q]
                     Ez1[q] = Ez2[q]
                     Ez2[q] = np.real(self._Ez[conv_index])
 
-                    phasex = libFDTD.FDTD_calc_phase_3T(t0, t1, t2,
-                                                        Ex0[q], Ex1[q], Ex2[q])
-                    phasey = libFDTD.FDTD_calc_phase_3T(t0, t1, t2,
-                                                        Ey0[q], Ey1[q], Ey2[q])
-                    phasez = libFDTD.FDTD_calc_phase_3T(t0, t1, t2,
+                    phasez = libFDTD.FDTD_TE_calc_phase_3T(t0, t1, t2,
                                                         Ez0[q], Ez1[q], Ez2[q])
 
-                    ampx = libFDTD.FDTD_calc_amplitude_3T(t0, t1, t2, Ex0[q],
-                                                          Ex1[q], Ex2[q], phasex)
-                    ampy = libFDTD.FDTD_calc_amplitude_3T(t0, t1, t2, Ey0[q],
-                                                          Ey1[q], Ey2[q], phasey)
-                    ampz = libFDTD.FDTD_calc_amplitude_3T(t0, t1, t2, Ez0[q],
+                    ampz = libFDTD.FDTD_TE_calc_amplitude_3T(t0, t1, t2, Ez0[q],
                                                           Ez1[q], Ez2[q], phasez)
 
-                    if(ampx < 0):
-                        ampx *= -1
-                        phasex += pi
-                    if(ampy < 0):
-                        ampy *= -1
-                        phasey += pi
                     if(ampz < 0):
                         ampz *= -1
                         phasez += pi
 
-                    phi1[q] = phasex + phasey + phasez
-                    A1[q] = ampx + ampy + ampz
+                    phi1[q] = phasez
+                    A1[q] = ampz
 
 
                 # broadcast amplitudes and phases so that "net" change can be
@@ -1160,45 +991,39 @@ class FDTD(MaxwellSolver):
 
             n += 1
 
-        libFDTD.FDTD_capture_t0_fields(self._libfdtd)
+        libFDTD.FDTD_TE_capture_t0_fields(self._libfdtd)
 
         # perform a couple more iterations to get a second time point
         n0 = n
         for n in range(Tn):
-            libFDTD.FDTD_update_H(self._libfdtd, n+n0, (n+n0)*dt)
+            libFDTD.FDTD_TE_update_H(self._libfdtd, n+n0, (n+n0)*dt)
 
             # Note: da.localToLocal seems to have the same performance?
             self._gc.update_local_vector(self._Hx)
             self._gc.update_local_vector(self._Hy)
-            self._gc.update_local_vector(self._Hz)
 
-            libFDTD.FDTD_update_E(self._libfdtd, n+n0, (n+n0+0.5)*dt)
+            libFDTD.FDTD_TE_update_E(self._libfdtd, n+n0, (n+n0+0.5)*dt)
 
-            self._gc.update_local_vector(self._Ex)
-            self._gc.update_local_vector(self._Ey)
             self._gc.update_local_vector(self._Ez)
 
 
-        libFDTD.FDTD_capture_t1_fields(self._libfdtd)
+        libFDTD.FDTD_TE_capture_t1_fields(self._libfdtd)
 
         for n in range(Tn):
-            libFDTD.FDTD_update_H(self._libfdtd, n+n0+Tn, (n+n0+Tn)*dt)
+            libFDTD.FDTD_TE_update_H(self._libfdtd, n+n0+Tn, (n+n0+Tn)*dt)
 
             # Note: da.localToLocal seems to have the same performance?
             self._gc.update_local_vector(self._Hx)
             self._gc.update_local_vector(self._Hy)
-            self._gc.update_local_vector(self._Hz)
 
-            libFDTD.FDTD_update_E(self._libfdtd, n+n0+Tn, (n+n0+Tn+0.5)*dt)
+            libFDTD.FDTD_TE_update_E(self._libfdtd, n+n0+Tn, (n+n0+Tn+0.5)*dt)
 
-            self._gc.update_local_vector(self._Ex)
-            self._gc.update_local_vector(self._Ey)
             self._gc.update_local_vector(self._Ez)
 
         t0 = n0*dt
         t1 = (n0+Tn)*dt
         t2 = (n0+2*Tn)*dt
-        libFDTD.FDTD_calc_complex_fields_3T(self._libfdtd, t0, t1, t2)
+        libFDTD.FDTD_TE_calc_complex_fields_3T(self._libfdtd, t0, t1, t2)
 
     def solve_forward(self):
         """Run a forward simulation.
@@ -1209,40 +1034,34 @@ class FDTD(MaxwellSolver):
             info_message('Solving forward simulation.')
 
         # Reset fourier-domain fields
-        self._Ex_fwd_t0.set(0); self._Ey_fwd_t0.set(0); self._Ez_fwd_t0.set(0)
-        self._Hx_fwd_t0.set(0); self._Hy_fwd_t0.set(0); self._Hz_fwd_t0.set(0)
+        self._Ez_fwd_t0.set(0)
+        self._Hx_fwd_t0.set(0); self._Hy_fwd_t0.set(0);
 
-        self._Ex_fwd_t1.set(0); self._Ey_fwd_t1.set(0); self._Ez_fwd_t1.set(0)
-        self._Hx_fwd_t1.set(0); self._Hy_fwd_t1.set(0); self._Hz_fwd_t1.set(0)
+        self._Ez_fwd_t1.set(0)
+        self._Hx_fwd_t1.set(0); self._Hy_fwd_t1.set(0);
 
         # make sure we are recording forward fields
-        libFDTD.FDTD_set_t0_arrays(self._libfdtd,
-                                   self._Ex_fwd_t0.getArray(),
-                                   self._Ey_fwd_t0.getArray(),
+        libFDTD.FDTD_TE_set_t0_arrays(self._libfdtd,
                                    self._Ez_fwd_t0.getArray(),
                                    self._Hx_fwd_t0.getArray(),
-                                   self._Hy_fwd_t0.getArray(),
-                                   self._Hz_fwd_t0.getArray())
+                                   self._Hy_fwd_t0.getArray())
 
-        libFDTD.FDTD_set_t1_arrays(self._libfdtd,
-                                   self._Ex_fwd_t1.getArray(),
-                                   self._Ey_fwd_t1.getArray(),
+        libFDTD.FDTD_TE_set_t1_arrays(self._libfdtd,
                                    self._Ez_fwd_t1.getArray(),
                                    self._Hx_fwd_t1.getArray(),
-                                   self._Hy_fwd_t1.getArray(),
-                                   self._Hz_fwd_t1.getArray())
+                                   self._Hy_fwd_t1.getArray())
 
         # set the forward simulation sources
-        libFDTD.FDTD_clear_sources(self._libfdtd)
+        libFDTD.FDTD_TE_clear_sources(self._libfdtd)
         for src in self._sources:
-            libFDTD.FDTD_add_source(self._libfdtd,
-                                    src.Jx, src.Jy, src.Jz,
-                                    src.Mx, src.My, src.Mz,
-                                    src.i0, src.j0, src.k0,
-                                    src.I, src.J, src.K,
+            libFDTD.FDTD_TE_add_source(self._libfdtd,
+                                    src.Jz,
+                                    src.Mx, src.My,
+                                    src.j0, src.k0,
+                                    src.J, src.K,
                                     False)
-
         self.__solve()
+
 
         self.update_saved_fields()
 
@@ -1252,9 +1071,6 @@ class FDTD(MaxwellSolver):
             self._source_power = Psrc
         else:
             self._source_power = MathDummy()
-
-        # update count (for diagnostics)
-        self.forward_count += 1
 
     def solve_adjoint(self):
         """Run an adjoint simulation.
@@ -1266,45 +1082,36 @@ class FDTD(MaxwellSolver):
             info_message('Solving adjoint simulation...')
 
         # Reset fourier-domain fields
-        self._Ex_adj_t0.set(0); self._Ey_adj_t0.set(0); self._Ez_adj_t0.set(0)
-        self._Hx_adj_t0.set(0); self._Hy_adj_t0.set(0); self._Hz_adj_t0.set(0)
+        self._Ez_adj_t0.set(0)
+        self._Hx_adj_t0.set(0); self._Hy_adj_t0.set(0);
 
-        self._Ex_adj_t1.set(0); self._Ey_adj_t1.set(0); self._Ez_adj_t1.set(0)
-        self._Hx_adj_t1.set(0); self._Hy_adj_t1.set(0); self._Hz_adj_t1.set(0)
+        self._Ez_adj_t1.set(0)
+        self._Hx_adj_t1.set(0); self._Hy_adj_t1.set(0);
 
         # make sure we are recording adjoint fields
-        libFDTD.FDTD_set_t0_arrays(self._libfdtd,
-                                    self._Ex_adj_t0.getArray(),
-                                    self._Ey_adj_t0.getArray(),
+        libFDTD.FDTD_TE_set_t0_arrays(self._libfdtd,
                                     self._Ez_adj_t0.getArray(),
                                     self._Hx_adj_t0.getArray(),
-                                    self._Hy_adj_t0.getArray(),
-                                    self._Hz_adj_t0.getArray())
+                                    self._Hy_adj_t0.getArray())
 
-        libFDTD.FDTD_set_t1_arrays(self._libfdtd,
-                                    self._Ex_adj_t1.getArray(),
-                                    self._Ey_adj_t1.getArray(),
+        libFDTD.FDTD_TE_set_t1_arrays(self._libfdtd,
                                     self._Ez_adj_t1.getArray(),
                                     self._Hx_adj_t1.getArray(),
-                                    self._Hy_adj_t1.getArray(),
-                                    self._Hz_adj_t1.getArray())
+                                    self._Hy_adj_t1.getArray())
 
         # set the adjoint simulation sources
         # The phase of these sources has already been calculated,
         # so we tell the C++ library to skip the phase calculation
-        libFDTD.FDTD_clear_sources(self._libfdtd)
+        libFDTD.FDTD_TE_clear_sources(self._libfdtd)
         for src in self._adj_sources:
-            libFDTD.FDTD_add_source(self._libfdtd,
-                                    src.Jx, src.Jy, src.Jz,
-                                    src.Mx, src.My, src.Mz,
-                                    src.i0, src.j0, src.k0,
-                                    src.I, src.J, src.K,
+            libFDTD.FDTD_TE_add_source(self._libfdtd,
+                                    src.Jz,
+                                    src.Mx, src.My,
+                                    src.j0, src.k0,
+                                    src.J, src.K,
                                     False)
 
         self.__solve()
-
-        # update count (for diagnostics)
-        self.adjoint_count += 1
 
     def update_saved_fields(self):
         """Update the fields contained in the regions specified by
@@ -1317,29 +1124,22 @@ class FDTD(MaxwellSolver):
         self._saved_fields = []
 
         for domain in self._field_domains:
-            Ex = self.get_field_interp(FieldComponent.Ex, domain)
-            Ey = self.get_field_interp(FieldComponent.Ey, domain)
             Ez = self.get_field_interp(FieldComponent.Ez, domain)
             Hx = self.get_field_interp(FieldComponent.Hx, domain)
             Hy = self.get_field_interp(FieldComponent.Hy, domain)
-            Hz = self.get_field_interp(FieldComponent.Hz, domain)
 
-            self._saved_fields.append((Ex, Ey, Ez, Hx, Hy, Hz))
+            self._saved_fields.append((Ez, Hx, Hy))
 
     def __get_field(self, component, domain=None, adjoint=False):
         ##Get the uninterpolated field component in the specified domain.
         # The process is nearly identical for forward/adjoint
         if(domain == None):
-            domain = DomainCoordinates(0, self._X, 0, self._Y, 0,
-                                       self._Z, self._dx, self._dy, self._dz)
+            #domain = DomainCoordinates2D(0, self._X, 0, self._Y,
+            #                           self._dx, self._dy)
+            domain = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
+                                       self._dx, self._dy, 1.0)
 
-        if(component == FieldComponent.Ex):
-            if(adjoint): field = self._Ex_adj_t0
-            else: field = self._Ex_fwd_t0
-        elif(component == FieldComponent.Ey):
-            if(adjoint): field = self._Ey_adj_t0
-            else: field = self._Ey_fwd_t0
-        elif(component == FieldComponent.Ez):
+        if(component == FieldComponent.Ez):
             if(adjoint): field = self._Ez_adj_t0
             else: field = self._Ez_fwd_t0
         elif(component == FieldComponent.Hx):
@@ -1348,9 +1148,6 @@ class FDTD(MaxwellSolver):
         elif(component == FieldComponent.Hy):
             if(adjoint): field = self._Hy_adj_t0
             else: field = self._Hy_fwd_t0
-        elif(component == FieldComponent.Hz):
-            if(adjoint): field = self._Hz_adj_t0
-            else: field = self._Hz_fwd_t0
 
         # get a "natural" representation of the appropriate field vector,
         # gather it on the rank 0 node and return the appropriate piece
@@ -1360,8 +1157,8 @@ class FDTD(MaxwellSolver):
 
         if(NOT_PARALLEL):
             fout = np.array(fout, dtype=np.complex128)
-            fout = np.reshape(fout, [self._Nz, self._Ny, self._Nx])
-            return fout[domain.i, domain.j, domain.k]
+            fout = np.reshape(fout, [self._Ny, self._Nx])
+            return fout[domain.j, domain.k]
         else:
             return MathDummy()
 
@@ -1374,7 +1171,7 @@ class FDTD(MaxwellSolver):
         ----------
         component : str
             The field component to retrieve
-        domain : misc.DomainCoordinates (optional)
+        domain : misc.DomainCoordinates2D (optional)
             The domain in which the field is retrieved. If None, retrieve the
             field in the whole 3D domain (which you probably should avoid doing
             for larger problems). (default = None)
@@ -1393,7 +1190,7 @@ class FDTD(MaxwellSolver):
         ----------
         component : str
             The adjoint field component to retrieve.
-        domain : misc.DomainCoordinates (optional)
+        domain : misc.DomainCoordinates2D (optional)
             The domain in which the field is retrieved. If None, retrieve the
             field in the whole 3D domain (which you probably should avoid doing
             for larger problems). (default = None)
@@ -1417,7 +1214,7 @@ class FDTD(MaxwellSolver):
         ----------
         component : str
             The desired field component.
-        domain : misc.DomainCoordinates (optional)
+        domain : misc.DomainCoordinates2D (optional)
             The domain from which the field is retrieved. (default = None)
 
         Returns
@@ -1432,36 +1229,36 @@ class FDTD(MaxwellSolver):
         else:
             # if no domain was provided
             if(domain == None):
-                domain_interp = DomainCoordinates(0, self._X, 0, self._Y, 0, self._Z,
-                                                  self._dx, self._dy, self._dz)
+                #domain_interp = DomainCoordinates2D(0, self._X, 0, self._Y,
+                #                                  self._dx, self._dy)
+                domain_interp = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
+                                                  self._dx, self._dy, 1.0)
                 domain = domain_interp
 
                 k1 = domain_interp.k1; k2 = domain_interp.k2
                 j1 = domain_interp.j1; j2 = domain_interp.j2
-                i1 = domain_interp.i1; i2 = domain_interp.i2
 
             # in order to properly handle interpolation at the boundaries, we
             # need to expand the domain
             else:
                 k1 = domain.k1; k2 = domain.k2
                 j1 = domain.j1; j2 = domain.j2
-                i1 = domain.i1; i2 = domain.i2
 
                 if(k1 > 0): k1 -= 1
                 if(k2 < self._Nx-1): k2 += 1
                 if(j1 > 0): j1 -= 1
                 if(j2 < self._Ny-1): j2 += 1
-                if(i1 > 0): i1 -= 1
-                if(i2 < self._Nz-1): i2 += 1
 
+                #domain_interp = DomainCoordinates2D(k1*self._dx, k2*self._dx,
+                #                                  j1*self._dy, j2*self._dy,
+                #                                  self._dx, self._dy)
                 domain_interp = DomainCoordinates(k1*self._dx, k2*self._dx,
                                                   j1*self._dy, j2*self._dy,
-                                                  i1*self._dz, i2*self._dz,
-                                                  self._dx, self._dy, self._dz)
+                                                  0, 0,
+                                                  self._dx, self._dy, 1.0)
 
                 k1 = domain_interp.k1; k2 = domain_interp.k2
                 j1 = domain_interp.j1; j2 = domain_interp.j2
-                i1 = domain_interp.i1; i2 = domain_interp.i2
 
             fraw = self.get_field(component, domain_interp)
 
@@ -1472,87 +1269,36 @@ class FDTD(MaxwellSolver):
 
             # after interpolation, we will need to crop the field so that it
             # matches the supplied domain
-            crop_field = lambda f : f[1+domain.i1-i1:-1-(i2-domain.i2), \
-                                      1+domain.j1-j1:-1-(j2-domain.j2), \
+            crop_field = lambda f : f[1+domain.j1-j1:-1-(j2-domain.j2), \
                                       1+domain.k1-k1:-1-(k2-domain.k2)]
 
             field = None
             bc = self._bc
-            if(component == FieldComponent.Ex):
-                # Handle special boundary conditions
-                if(k1 == 0 and bc[0] == 'E'):
-                    fraw[:, :, 0] = -1*fraw[:,:,1]
-                elif(k1 == 0 and bc[0] == 'H'):
-                    fraw[:, :, 0] = fraw[:, :, 1]
 
-                Ex = np.copy(fraw)
-                Ex [1:-1, :, 1:-1] += fraw[1:-1, :, 0:-2]
-                Ex [1:-1, :, 1:-1] += fraw[2:, :, 1:-1]
-                Ex [1:-1, :, 1:-1] += fraw[2:, :, 0:-2]
-                Ex = Ex/4.0
-                field = crop_field(Ex)
-
-            elif(component == FieldComponent.Ey):
+            if(component == FieldComponent.Hx):
                 # handle special boundary conditions
                 if(j1 == 0 and bc[1] == 'E'):
-                    fraw[:, 0, :] = -1*fraw[:, 1, :]
+                    fraw[0, :] = -1*fraw[1, :]
                 elif(j1 == 0 and bc[1] == 'H'):
-                    fraw[:, 0, :] = fraw[:, 1, :]
-
-                Ey = np.copy(fraw)
-                Ey[1:-1, 1:-1, :] += fraw[1:-1, 0:-2, :]
-                Ey[1:-1, 1:-1, :] += fraw[2:, 1:-1, :]
-                Ey[1:-1, 1:-1, :] += fraw[2:, 0:-2, :]
-                Ey = Ey/4.0
-                field = crop_field(Ey)
-
-            elif(component == FieldComponent.Hx):
-                # handle special boundary conditions
-                if(j1 == 0 and bc[1] == 'E'):
-                    fraw[:, 0, :] = -1*fraw[:, 1, :]
-                elif(j1 == 0 and bc[1] == 'H'):
-                    fraw[:, 0, :] = fraw[:, 1, :]
+                    fraw[0, :] = fraw[1, :]
 
                 Hx = np.copy(fraw)
-                Hx[:, 1:, :] += fraw[:, 0:-1, :]
+                Hx[1:, :] += fraw[0:-1, :]
                 Hx = Hx/2.0
                 field = crop_field(Hx)
 
             elif(component == FieldComponent.Hy):
                 # Handle special boundary conditions
                 if(k1 == 0 and bc[0] == 'E'):
-                    fraw[:, :, 0] = -1*fraw[:,:,1]
+                    fraw[:, 0] = -1*fraw[:,1]
                 elif(k1 == 0 and bc[0] == 'H'):
-                    fraw[:, :, 0] = fraw[:, :, 1]
+                    fraw[:, 0] = fraw[:, 1]
 
                 Hy = np.copy(fraw)
-                Hy[:, :, 1:] += fraw[:, :, 0:-1]
+                Hy[:, 1:] += fraw[:, 0:-1]
                 Hy = Hy/2.0
                 field = crop_field(Hy)
 
-            elif(component == FieldComponent.Hz):
-                # Handle special boundary conditions
-                if(k1 == 0 and bc[0] == 'E'):
-                    fraw[:, :, 0] = -1*fraw[:,:,1]
-                elif(k1 == 0 and bc[0] == 'H'):
-                    fraw[:, :, 0] = fraw[:, :, 1]
-
-                # handle special boundary conditions
-                if(j1 == 0 and bc[1] == 'E'):
-                    fraw[:, 0, :] = -1*fraw[:, 1, :]
-                elif(j1 == 0 and bc[1] == 'H'):
-                    fraw[:, 0, :] = fraw[:, 1, :]
-
-                Hz = np.copy(fraw)
-                Hz[0:-1, 1:, 1:] += fraw[0:-1, 1:, 0:-1]
-                Hz[0:-1, 1:, 1:] += fraw[0:-1, 0:-1, 1:]
-                Hz[0:-1, 1:, 1:] += fraw[0:-1, 0:-1, 0:-1]
-                Hz[0:-1, 1:, 1:] += fraw[1:, 1:, 1:]
-                Hz[0:-1, 1:, 1:] += fraw[1:, 1:, 0:-1]
-                Hz[0:-1, 1:, 1:] += fraw[1:, 0:-1, 1:]
-                Hz[0:-1, 1:, 1:] += fraw[1:, 0:-1, 0:-1]
-                Hz = Hz/8.0
-                field = crop_field(Hz)
             else:
                 pass
 
@@ -1573,7 +1319,7 @@ class FDTD(MaxwellSolver):
         Psrc = 0.0
 
         # define pml boundary domains
-        dx = self._dx; dy = self._dy; dz = self._dz
+        dx = self._dx; dy = self._dy;
         if(self._w_pml[0] > 0): xmin = self._w_pml[0]+dx
         else: xmin = 0.0
 
@@ -1586,90 +1332,55 @@ class FDTD(MaxwellSolver):
         if(self._w_pml[3] > 0): ymax = self._Y - self._w_pml[3]-dy
         else: ymax = self._Y - self._dy
 
-        if(self._w_pml[4] > 0): zmin = self._w_pml[4]+dz
-        else: zmin = 0.0
 
-        if(self._w_pml[5] > 0): zmax = self._Z - self._w_pml[5]-dz
-        else: zmax = self._Z - self._dz
-
-        x1 = DomainCoordinates(xmin, xmin, ymin, ymax, zmin, zmax, dx, dy, dz)
-        x2 = DomainCoordinates(xmax, xmax, ymin, ymax, zmin, zmax, dx, dy, dz)
-        y1 = DomainCoordinates(xmin, xmax, ymin, ymin, zmin, zmax, dx, dy, dz)
-        y2 = DomainCoordinates(xmin, xmax, ymax, ymax, zmin, zmax, dx, dy, dz)
-        z1 = DomainCoordinates(xmin, xmax, ymin, ymax, zmin, zmin, dx, dy, dz)
-        z2 = DomainCoordinates(xmin, xmax, ymin, ymax, zmax, zmax, dx, dy, dz)
+        #x1 = DomainCoordinates2D(xmin, xmin, ymin, ymax, dx, dy)
+        #x2 = DomainCoordinates2D(xmax, xmax, ymin, ymax, dx, dy)
+        #y1 = DomainCoordinates2D(xmin, xmax, ymin, ymin, dx, dy)
+        #y2 = DomainCoordinates2D(xmin, xmax, ymax, ymax, dx, dy)
+        x1 = DomainCoordinates(xmin, xmin, ymin, ymax, 0, 0, dx, dy, 1.0)
+        x2 = DomainCoordinates(xmax, xmax, ymin, ymax, 0, 0, dx, dy, 1.0)
+        y1 = DomainCoordinates(xmin, xmax, ymin, ymin, 0, 0, dx, dy, 1.0)
+        y2 = DomainCoordinates(xmin, xmax, ymax, ymax, 0, 0, dx, dy, 1.0)
 
         # calculate power transmitter through xmin boundary
-        Ey = self.get_field_interp('Ey', x1)
         Ez = self.get_field_interp('Ez', x1)
         Hy = self.get_field_interp('Hy', x1)
-        Hz = self.get_field_interp('Hz', x1)
 
         if(NOT_PARALLEL and self._bc[0] != 'E' and self._bc[0] != 'H'):
-            Px = -0.5*dy*dz*np.sum(np.real(Ey*np.conj(Hz)-Ez*np.conj(Hy)))
+            Px = -0.5*dy*np.sum(np.real(-1*Ez*np.conj(Hy)))
             #print Px
             Psrc += Px
-        del Ey; del Ez; del Hy; del Hz
+        del Ez; del Hy;
 
         # calculate power transmitter through xmax boundary
-        Ey = self.get_field_interp('Ey', x2)
         Ez = self.get_field_interp('Ez', x2)
         Hy = self.get_field_interp('Hy', x2)
-        Hz = self.get_field_interp('Hz', x2)
 
         if(NOT_PARALLEL):
-            Px = 0.5*dy*dz*np.sum(np.real(Ey*np.conj(Hz)-Ez*np.conj(Hy)))
+            Px = 0.5*dy*np.sum(np.real(-1*Ez*np.conj(Hy)))
             #print Px
             Psrc += Px
-        del Ey; del Ez; del Hy; del Hz
+        del Ez; del Hy;
 
         # calculate power transmitter through ymin boundary
-        Ex = self.get_field_interp('Ex', y1)
         Ez = self.get_field_interp('Ez', y1)
         Hx = self.get_field_interp('Hx', y1)
-        Hz = self.get_field_interp('Hz', y1)
 
         if(NOT_PARALLEL and self._bc[1] != 'E' and self._bc[1] != 'H'):
-            Py = 0.5*dx*dz*np.sum(np.real(Ex*np.conj(Hz)-Ez*np.conj(Hx)))
+            Py = 0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
             #print Py
             Psrc += Py
-        del Ex; del Ez; del Hx; del Hz
+        del Ez; del Hx;
 
         # calculate power transmitter through ymax boundary
-        Ex = self.get_field_interp('Ex', y2)
         Ez = self.get_field_interp('Ez', y2)
         Hx = self.get_field_interp('Hx', y2)
-        Hz = self.get_field_interp('Hz', y2)
 
         if(NOT_PARALLEL):
-            Py = -0.5*dx*dz*np.sum(np.real(Ex*np.conj(Hz)-Ez*np.conj(Hx)))
+            Py = -0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
             #print Py
             Psrc += Py
-        del Ex; del Ez; del Hx; del Hz
-
-        # calculate power transmitter through zmin boundary
-        Ex = self.get_field_interp('Ex', z1)
-        Ey = self.get_field_interp('Ey', z1)
-        Hx = self.get_field_interp('Hx', z1)
-        Hy = self.get_field_interp('Hy', z1)
-
-        if(NOT_PARALLEL and self._bc[2] != 'E' and self._bc[2] != 'H'):
-            Pz = -0.5*dx*dy*np.sum(np.real(Ex*np.conj(Hy)-Ey*np.conj(Hx)))
-            #print Pz
-            Psrc += Pz
-        del Ex; del Ey; del Hx; del Hy
-
-        # calculate power transmitter through zmin boundary
-        Ex = self.get_field_interp('Ex', z2)
-        Ey = self.get_field_interp('Ey', z2)
-        Hx = self.get_field_interp('Hx', z2)
-        Hy = self.get_field_interp('Hy', z2)
-
-        if(NOT_PARALLEL):
-            Pz = 0.5*dx*dy*np.sum(np.real(Ex*np.conj(Hy)-Ey*np.conj(Hx)))
-            #print Pz
-            Psrc += Pz
-        del Ex; del Ey; del Hx; del Hy
+        del Ez; del Hx;
 
         return Psrc
 
@@ -1689,14 +1400,11 @@ class FDTD(MaxwellSolver):
             A copy of the set of permittivity and permeability distributions used
             internally.
         """
-        eps_x = np.copy(self._eps_x.getArray())
-        eps_y = np.copy(self._eps_y.getArray())
         eps_z = np.copy(self._eps_z.getArray())
         mu_x = np.copy(self._mu_x.getArray())
         mu_y = np.copy(self._mu_y.getArray())
-        mu_z = np.copy(self._mu_z.getArray())
 
-        return (eps_x, eps_y, eps_z, mu_x, mu_y, mu_z)
+        return (eps_z, mu_x, mu_y)
 
     def calc_ydAx(self, Adiag0):
         """Calculate the product y^T*dA*x.
@@ -1711,15 +1419,12 @@ class FDTD(MaxwellSolver):
         complex
             The product y^T*dA*x
         """
-        eps_x0, eps_y0, eps_z0, mu_x0, mu_y0, mu_z0 = Adiag0
+        eps_z0, mu_x0, mu_y0 = Adiag0
 
-        ydAx = np.zeros(eps_x0.shape, dtype=np.complex128)
-        ydAx = ydAx + self._Ex_adj_t0[...] *  1j * (self._eps_x[...]-eps_x0) * self._Ex_fwd_t0[...]
-        ydAx = ydAx + self._Ey_adj_t0[...] *  1j * (self._eps_y[...]-eps_y0) * self._Ey_fwd_t0[...]
+        ydAx = np.zeros(eps_z0.shape, dtype=np.complex128)
         ydAx = ydAx + self._Ez_adj_t0[...] *  1j * (self._eps_z[...]-eps_z0) * self._Ez_fwd_t0[...]
         ydAx = ydAx + self._Hx_adj_t0[...] * -1j * (self._mu_x[...]-mu_x0)   * self._Hx_fwd_t0[...]
         ydAx = ydAx + self._Hy_adj_t0[...] * -1j * (self._mu_y[...]-mu_y0)   * self._Hy_fwd_t0[...]
-        ydAx = ydAx + self._Hz_adj_t0[...] * -1j * (self._mu_z[...]-mu_z0)   * self._Hz_fwd_t0[...]
 
         return np.sum(ydAx)
 
@@ -1731,15 +1436,315 @@ class FDTD(MaxwellSolver):
 
         ramp = np.zeros(3000)
         for i in range(len(time)):
-            ramp[i] = libFDTD.FDTD_src_func_t(self._libfdtd, i, time[i], 0)
+            ramp[i] = libFDTD.FDTD_TE_src_func_t(self._libfdtd, i, time[i], 0)
 
         plt.plot(time,ramp)
         plt.show()
 
 
+class FDTD_TM(FDTD_TE):
+    def __init__(self, X, Y, dx, dy, wavelength, rtol=1e-6, nconv=None,
+                 min_rindex=1.0, complex_eps=False):
+        super(FDTD_TM, self).__init__(X, Y, dx, dy, wavelength, rtol=rtol,
+              nconv=nconv, min_rindex=min_rindex, complex_eps=complex_eps)
+        #self._bc = ['M','M']
+
+    @property
+    def eps(self):
+        return self._eps_actual
+
+    @property
+    def mu(self):
+        return self._mu_actual
+
+    @property
+    def bc(self):
+        retval = []
+        for i in range(2):
+            if(self._bc[i]=='E'): retval.append('H')
+            elif(self._bc[i]=='H'): retval.append('E')
+        return ''.join(retval)
+
+    @bc.setter
+    def bc(self, newbc):
+        if(len(newbc) != 2):
+            raise ValueError('Incorrect number of boundary conditions specified!')
+
+        for bc in newbc:
+            if(not bc in '0EHP'):
+                raise ValueError('Unrecognized boundary condition: %s' % (bc))
+            if(bc == 'P'):
+                raise NotImplementedError('Periodic boundary conditions not yet ' \
+                                          'implemented')
+
+
+        newbc = list(newbc)
+        for i in range(2):
+            if(newbc[i] == 'E'): newbc[i] = 'H'
+            elif(newbc[i] == 'H'): newbc[i] = 'E'
+            #if(self._bc[i] == '0'): self._bc[i] = 'M'
+            #elif(self._bc[i] == 'M'): self._bc[i] = '0'
+
+
+        #self._bc = list(newbc)
+        self._bc = newbc
+        libFDTD.FDTD_TE_set_bc(self._libfdtd, ''.join(self._bc).encode('ascii'))
+
+    def set_materials(self, eps, mu):
+        super(FDTD_TM, self).set_materials(mu, eps)
+        self._eps_actual = eps
+        self._mu_actual = mu
+
+    def __get_local_domain_overlap(self, domain):
+        super(FDTD_TM, self).__get_local_domain_overlap(domain)
+
+    #def __set_sources(self, src, domain, adjoint=False):
+    #    super(FDTD_TM, self).__set_sources(src, domain, adjoint=adjoint)
+
+    def set_sources(self, src, domain, mindex=0):
+        """Set a simulation source.
+
+        Simulation sources can be set either using a set of 6 arrays (Jx, Jy,
+        Jz, Mx, My, Mz) or a :class:`modes.ModeFullVector` object. In either
+        case, a domain must be provided which tells the simulation where to put
+        those sources.
+
+        This function operates in an additive manner meaning that multiple
+        calls will add multiple sources to the simulation. To replace the
+        existing sources, simply call :def:`clear_sources` first.
+
+        Parameters
+        ----------
+        src : tuple or modes.ModeFullVector
+            The source arrays or mode object containing source data
+        domain : misc.DomainCoordinates2D
+            The domain which specifies where the source is located
+        mindex : int (optional)
+            The mode source index. This is only relevant if using a
+            ModeFullVector object to set the sources. (default = 0)
+        """
+        if(type(src) == ModeTM):
+            Mzs, Jxs, Jys = src.get_source(mindex, self._dx,
+                                                   self._dy)
+
+            Mz = COMM.bcast(Mzs, root=0)
+            Jx = COMM.bcast(Jxs, root=0)
+            Jy = COMM.bcast(Jys, root=0)
+
+            src_arrays = (Mz, -1*Jx, -1*Jy)
+        else:
+            Mz = src[0]
+            Jx = src[1]
+            Jy = src[2]
+            src_arrays = (Mz, -1*Jx, -1*Jy)
+
+        #self.__set_sources(src_arrays, domain, adjoint=False)
+        super(FDTD_TM, self).set_sources(src_arrays, domain, mindex)
+        COMM.Barrier()
+
+    def set_adjoint_sources(self, src):
+        super(FDTD_TM, self).set_adjoint_sources((src[0], -1*src[1], -1*src[2]))
+
+    def get_field(self, component, domain=None):
+        """Get the (raw, uninterpolated) field.
+
+        In most cases, you should use :def:`get_field_interp` instead.
+
+        Parameters
+        ----------
+        component : str
+            The field component to retrieve
+        domain : misc.DomainCoordinates2D (optional)
+            The domain in which the field is retrieved. If None, retrieve the
+            field in the whole 3D domain (which you probably should avoid doing
+            for larger problems). (default = None)
+
+        Returns
+        -------
+        numpy.ndarray
+            An array containing the field.
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDTD_TM, self).get_field(te_comp, domain)
+
+        if(component == 'Hz'):
+            return -1 * field
+        else:
+            return field
+
+    def get_adjoint_field(self, component, domain=None):
+        """Get the adjoint field.
+
+        Parameters
+        ----------
+        component : str
+            The adjoint field component to retrieve.
+        domain : misc.DomainCoordinates2D (optional)
+            The domain in which the field is retrieved. If None, retrieve the
+            field in the whole 3D domain (which you probably should avoid doing
+            for larger problems). (default = None)
+
+        Returns
+        -------
+        numpy.ndarray
+            An array containing the field.
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDTD_TM, self).get_adjoint_field(te_comp, domain)
+
+        if(component == 'Hz'):
+            return -1 * field
+        else:
+            return field
+
+    def get_field_interp(self, component, domain=None, squeeze=False):
+        """Get the desired field component.
+
+        Internally, fields are solved on a staggered grid. In most cases, it is
+        desirable to know all of the field components at the same sets of
+        positions. This requires that we interpolate the fields onto a single
+        grid. In emopt, we interpolate all field components onto the Ez grid.
+
+        Parameters
+        ----------
+        component : str
+            The desired field component.
+        domain : misc.DomainCoordinates2D (optional)
+            The domain from which the field is retrieved. (default = None)
+
+        Returns
+        -------
+        numpy.ndarray
+            The interpolated field
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDTD_TM, self).get_field_interp(te_comp, domain, squeeze)
+
+        if(component == 'Hz'):
+            return -1 * field
+        else:
+            return field
+
+    def get_source_power(self):
+        """Get source power.
+
+        The source power is the total electromagnetic power radiated by the
+        electric and magnetic current sources.
+
+        Returns
+        -------
+        float
+            The source power.
+        """
+        Psrc = 0.0
+
+        # define pml boundary domains
+        dx = self._dx; dy = self._dy;
+        if(self._w_pml[0] > 0): xmin = self._w_pml[0]+dx
+        else: xmin = 0.0
+
+        if(self._w_pml[1] > 0): xmax = self._X - self._w_pml[1]-dx
+        else: xmax = self._X - self._dx
+
+        if(self._w_pml[2] > 0): ymin = self._w_pml[2]+dy
+        else: ymin = 0.0
+
+        if(self._w_pml[3] > 0): ymax = self._Y - self._w_pml[3]-dy
+        else: ymax = self._Y - self._dy
+
+
+        x1 = DomainCoordinates(xmin, xmin, ymin, ymax, 0, 0, dx, dy, 1.0)
+        x2 = DomainCoordinates(xmax, xmax, ymin, ymax, 0, 0, dx, dy, 1.0)
+        y1 = DomainCoordinates(xmin, xmax, ymin, ymin, 0, 0, dx, dy, 1.0)
+        y2 = DomainCoordinates(xmin, xmax, ymax, ymax, 0, 0, dx, dy, 1.0)
+
+        # calculate power transmitter through xmin boundary
+        Hz = self.get_field_interp('Hz', x1)
+        Ey = self.get_field_interp('Ey', x1)
+
+        if(NOT_PARALLEL and self._bc[0] != 'E' and self._bc[0] != 'H'):
+            Px = 0.5*dy*np.sum(np.real(-1*Ey*np.conj(Hz)))
+            Psrc += Px
+        del Hz; del Ey;
+
+        # calculate power transmitter through xmax boundary
+        Hz = self.get_field_interp('Hz', x2)
+        Ey = self.get_field_interp('Ey', x2)
+
+        if(NOT_PARALLEL):
+            Px = -0.5*dy*np.sum(np.real(-1*Ey*np.conj(Hz)))
+            Psrc += Px
+        del Hz; del Ey;
+
+        # calculate power transmitter through ymin boundary
+        Hz = self.get_field_interp('Hz', y1)
+        Ex = self.get_field_interp('Ex', y1)
+
+        if(NOT_PARALLEL and self._bc[1] != 'E' and self._bc[1] != 'H'):
+            Py = -0.5*dx*np.sum(np.real(-1*Ex*np.conj(Hz)))
+            Psrc += Py
+        del Hz; del Ex;
+
+        # calculate power transmitter through ymax boundary
+        Hz = self.get_field_interp('Hz', y2)
+        Ex = self.get_field_interp('Ex', y2)
+
+        if(NOT_PARALLEL):
+            Py = 0.5*dx*np.sum(np.real(-1*Ex*np.conj(Hz)))
+            Psrc += Py
+        del Hz; del Ex;
+
+        return Psrc
+
+    def get_A_diag(self):
+        """Get the diagonal entries of the system matrix A.
+
+        Parameters
+        ----------
+        vdiag : petsc4py.PETSc.Vec
+            Vector with dimensions Mx1 where M is equal to the number of
+            diagonal entries in A.
+
+        Returns
+        -------
+        **(Master node only)** the diagonal entries of A.
+        """
+        # We need to override this function since the TE matrix diagonals do
+        # not match the TM matrix diagonals (even when swapping eps and mu).
+        # This is because the signs on epsilon and mu in Maxwell's equations
+        # are flipped when moving from TE to TM.  In most cases, it is easiest
+        # to handle this change by swapping Ez with -Hz, Mx with -Jx, and My
+        # with -Jy in the TE equations, which can be achieved by simply
+        # overriding the corresponding setter and getter functions.  In
+        # reality, a better way to handle reusing the TE equations is to swap E
+        # and H, J and M, eps with -mu, and mu with -eps.  This way of doing
+        # things, however, is harder to achieve programmatically if we want to
+        # reuse as much of the TE code as possible.  When using the FDFD object
+        # with an AdjointMethod, it turns out that simply swapping field and
+        # source components is insufficient and knowledge of the A's diagonals
+        # is needed, hence this overriden function.
+        mu_z, eps_x, eps_y = super(FDTD_TM, self).get_A_diag()
+        
+        return (-1*mu_z, -1*eps_x, -1*eps_y)
+
 class GhostComm(object):
 
-    def __init__(self, k0, j0, i0, K, J, I, Nx, Ny, Nz):
+    def __init__(self, k0, j0, K, J, Nx, Ny):
         """Create a GhostComm object.
 
         The GhostComm object mediates the communication of ghost (edge) values
@@ -1762,20 +1767,17 @@ class GhostComm(object):
 
         """
         # Inputs describe the block in the grid which has ghost values
-        self._i0 = i0
         self._j0 = j0
         self._k0 = k0
-        self._I = I
         self._J = J
         self._K = K
         self._Nx = Nx
         self._Ny = Ny
-        self._Nz = Nz
 
         # define the number of boundary points and ghost points
         # for simplicity, the edge values of  the boundary elements are
         # duplicated. This should minimally impact performance.
-        nbound = K*J*2 + K*I*2 + I*J*2
+        nbound = K*2 + J*2
         nghost = nbound
         self._nbound = nbound
         self._nghsot = nghost
@@ -1789,7 +1791,7 @@ class GhostComm(object):
         # global ghost vector, (2) the position of each block in the physical
         # grid, and (3) the size of each block.
         start, end = gvec.getOwnershipRange()
-        pos_data = (start, i0, j0, k0, I, J, K)
+        pos_data = (start, j0, k0, J, K)
 
         # collect and then share all of the position data
         pos_data = COMM.gather(pos_data, root=0)
@@ -1802,51 +1804,34 @@ class GhostComm(object):
         k = k0-1
         if(k < 0): k = Nx-1
         for pd in pos_data:
-            gindex, i0n, j0n, k0n, In, Jn, Kn = pd
-            if(k == k0n + Kn-1 and i0 == i0n and j0 == j0n):
-                ighosts += list(range(gindex+In*Jn, gindex+2*In*Jn))
+            gindex, j0n, k0n, Jn, Kn = pd
+            if(k == k0n + Kn-1 and j0 == j0n):
+                ighosts += list(range(gindex+Jn, gindex+2*Jn))
 
         # xmax boundary
         k = k0+K
         if(k > Nx-1): k = 0
         for pd in pos_data:
-            gindex, i0n, j0n, k0n, In, Jn, Kn = pd
-            if(k ==  k0n and i0 == i0n and j0 == j0n):
-                ighosts += list(range(gindex, gindex + In*Jn))
+            gindex, j0n, k0n, Jn, Kn = pd
+            if(k ==  k0n and j0 == j0n):
+                ighosts += list(range(gindex, gindex + Jn))
 
         # ymin boundary
         j = j0-1
         if(j < 0): j = Ny-1
         for pd in pos_data:
-            gindex, i0n, j0n, k0n, In, Jn, Kn = pd
-            if(j == j0n + Jn - 1 and k0 == k0n and i0 == i0n):
-                ighosts += list(range(gindex+2*In*Jn+In*Kn, gindex+2*In*Jn+2*In*Kn))
+            gindex, j0n, k0n, Jn, Kn = pd
+            if(j == j0n + Jn - 1 and k0 == k0n):
+                ighosts += list(range(gindex+2*Jn+Kn, gindex+2*Jn+2*Kn))
 
         # ymax boundary
         j = j0+J
         if(j > Ny-1): j = 0
         for pd in pos_data:
-            gindex, i0n, j0n, k0n, In, Jn, Kn = pd
-            if(j == j0n and k0 == k0n and i0 == i0n):
-                ighosts += list(range(gindex+2*In*Jn, gindex+2*In*Jn+In*Kn))
+            gindex, j0n, k0n, Jn, Kn = pd
+            if(j == j0n and k0 == k0n):
+                ighosts += list(range(gindex+2*Jn, gindex+2*Jn+Kn))
 
-        # zmin boundary
-        i = i0-1
-        if(i < 0): i = Nz-1
-        for pd in pos_data:
-            gindex, i0n, j0n, k0n, In, Jn, Kn = pd
-            if(i == i0n + In - 1 and j0 == j0n and k0 == k0n):
-                ighosts += list(range(gindex+2*In*Jn+2*In*Kn+Jn*Kn,
-                                 gindex+2*In*Jn+2*In*Kn+2*Jn*Kn))
-
-        # zmax boundary
-        i = i0+I
-        if(i > Nz-1): i = 0
-        for pd in pos_data:
-            gindex, i0n, j0n, k0n, In, Jn, Kn = pd
-            if(i == i0n and j0 == j0n and k0 == k0n):
-                ighosts += list(range(gindex+2*In*Jn+2*In*Kn,
-                                 gindex+2*In*Jn+2*In*Kn+Jn*Kn))
 
         # Set the ghost indices = finish constructing ghost vector
         self._ighosts = np.array(ighosts, dtype=np.int32)
@@ -1861,13 +1846,13 @@ class GhostComm(object):
         vl : np.ndarray
             The local vector
         """
-        I = self._I; J = self._J; K = self._K
-        i0 = self._i0; j0 = self._j0; k0 = self._k0
+        J = self._J; K = self._K
+        j0 = self._j0; k0 = self._k0
         nbound = self._nbound
 
         garr = self._gvec.getArray()
 
-        libFDTD.FDTD_copy_to_ghost_comm(vl, garr, I, J, K)
+        libFDTD.FDTD_TE_copy_to_ghost_comm(vl, garr, J, K)
 
         # do the ghost update
         self._gvec.ghostUpdate()
@@ -1877,4 +1862,6 @@ class GhostComm(object):
         with self._gvec.localForm() as gloc:
             gloc_arr = gloc.getArray()
 
-            libFDTD.FDTD_copy_from_ghost_comm(vl, garr, I, J, K)
+            libFDTD.FDTD_TE_copy_from_ghost_comm(vl, garr, J, K)
+
+

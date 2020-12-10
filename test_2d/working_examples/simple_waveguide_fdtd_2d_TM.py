@@ -10,7 +10,7 @@ If you wish to increase the number of cores that the example is executed on,
 change 8 to the desired number of cores.
 """
 
-import emopt
+import emopt2 as emopt
 from emopt.misc import NOT_PARALLEL
 
 import numpy as np
@@ -22,13 +22,13 @@ matplotlib.use('Agg')
 ####################################################################################
 X = 10.0
 Y = 7.0
-dx = 0.005
-dy = 0.005
+dx = 0.02
+dy = 0.02
 wavelength = 1.55
 
 sim = emopt.fdtd_2d.FDTD_TM(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
                       nconv=100)
-sim.courant_num = 0.65
+sim.courant_num = 0.99
 sim.Nmax = 1000*sim.Ncycle
 w_pml = dx * 50 # set the PML width
 
@@ -48,7 +48,7 @@ Y = sim.Y
 # Setup system materials
 ####################################################################################
 # Materials
-n0 = 1.0
+n0 = 1.44
 n1 = 3.0
 
 # set a background permittivity of 1
@@ -121,7 +121,7 @@ if(NOT_PARALLEL):
     im = ax.imshow(Hz.real, extent=extent,
                             vmin=-np.max(Hz.real)/1.0,
                             vmax=np.max(Hz.real)/1.0,
-                            cmap='seismic',interpolation='nearest')
+                            cmap='jet',interpolation='nearest')
 
     # Plot the waveguide boundaries
     ax.plot(extent[0:2], [Y/2-h_wg/2, Y/2-h_wg/2], 'k-')

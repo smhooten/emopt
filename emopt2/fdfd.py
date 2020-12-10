@@ -61,13 +61,13 @@ from __future__ import absolute_import
 # Initialize petsc first
 from builtins import zip
 from builtins import range
-import petsc4py
+#import petsc4py
 import sys
 from future.utils import with_metaclass
-petsc4py.init(sys.argv)
+#petsc4py.init(sys.argv)
 
 from .misc import info_message, warning_message, error_message, RANK, \
-NOT_PARALLEL, run_on_master, MathDummy, DomainCoordinates, COMM
+NOT_PARALLEL, run_on_master, MathDummy, DomainCoordinates, COMM, petsc4py, MPI
 from .defs import FieldComponent, SourceComponent
 from . import modes
 from .simulation import MaxwellSolver
@@ -79,7 +79,7 @@ from math import pi
 from abc import ABCMeta, abstractmethod
 from petsc4py import PETSc
 import array
-from mpi4py import MPI
+#from mpi4py import MPI
 
 __author__ = "Andrew Michaels"
 __license__ = "GPL License, Version 3.0"

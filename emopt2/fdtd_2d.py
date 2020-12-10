@@ -29,7 +29,7 @@ from .defs import FieldComponent
 from .misc import DomainCoordinates, RANK, MathDummy, NOT_PARALLEL, COMM, \
 info_message, warning_message, N_PROC, run_on_master
 from .fdtd_2d_ctypes import libFDTD
-from .modes import ModeTE
+from .modes import ModeTE, ModeTM
 import petsc4py
 import sys
 petsc4py.init(sys.argv)
@@ -1447,16 +1447,59 @@ class FDTD_TM(FDTD_TE):
                  min_rindex=1.0, complex_eps=False):
         super(FDTD_TM, self).__init__(X, Y, dx, dy, wavelength, rtol=rtol,
               nconv=nconv, min_rindex=min_rindex, complex_eps=complex_eps)
+        #self._bc = ['M','M']
+
+    @property
+    def eps(self):
+        return self._eps_actual
+
+    @property
+    def mu(self):
+        return self._mu_actual
+
+    @property
+    def bc(self):
+        retval = []
+        for i in range(2):
+            if(self._bc[i]=='E'): retval.append('H')
+            elif(self._bc[i]=='H'): retval.append('E')
+        return ''.join(retval)
+
+    @bc.setter
+    def bc(self, newbc):
+        if(len(newbc) != 2):
+            raise ValueError('Incorrect number of boundary conditions specified!')
+
+        for bc in newbc:
+            if(not bc in '0EHP'):
+                raise ValueError('Unrecognized boundary condition: %s' % (bc))
+            if(bc == 'P'):
+                raise NotImplementedError('Periodic boundary conditions not yet ' \
+                                          'implemented')
+
+
+        newbc = list(newbc)
+        for i in range(2):
+            if(newbc[i] == 'E'): newbc[i] = 'H'
+            elif(newbc[i] == 'H'): newbc[i] = 'E'
+            #if(self._bc[i] == '0'): self._bc[i] = 'M'
+            #elif(self._bc[i] == 'M'): self._bc[i] = '0'
+
+
+        #self._bc = list(newbc)
+        self._bc = newbc
+        libFDTD.FDTD_TE_set_bc(self._libfdtd, ''.join(self._bc).encode('ascii'))
 
     def set_materials(self, eps, mu):
-        self._eps = -1*mu
-        self._mu = -1*eps
+        super(FDTD_TM, self).set_materials(mu, eps)
+        self._eps_actual = eps
+        self._mu_actual = mu
 
     def __get_local_domain_overlap(self, domain):
         super(FDTD_TM, self).__get_local_domain_overlap(domain)
 
-    def __set_sources(self, src, domain, adjoint=False):
-        super(FDTD_TM, self).__set_sources(src, domain, adjoint=adjoint)
+    #def __set_sources(self, src, domain, adjoint=False):
+    #    super(FDTD_TM, self).__set_sources(src, domain, adjoint=adjoint)
 
     def set_sources(self, src, domain, mindex=0):
         """Set a simulation source.
@@ -1484,46 +1527,85 @@ class FDTD_TM(FDTD_TE):
             Mzs, Jxs, Jys = src.get_source(mindex, self._dx,
                                                    self._dy)
 
-            Jzs = COMM.bcast(Jzs, root=0)
-            Mxs = COMM.bcast(Mxs, root=0)
-            Mys = COMM.bcast(Mys, root=0)
+            Mz = COMM.bcast(Mzs, root=0)
+            Jx = COMM.bcast(Jxs, root=0)
+            Jy = COMM.bcast(Jys, root=0)
 
-            src_arrays = (Mzs, Jxs, Jys)
+            src_arrays = (Mz, -1*Jx, -1*Jy)
         else:
-            src_arrays = src
+            Mz = src[0]
+            Jx = src[1]
+            Jy = src[2]
+            src_arrays = (Mz, -1*Jx, -1*Jy)
 
-        self.__set_sources(src_arrays, domain, adjoint=False)
+        #self.__set_sources(src_arrays, domain, adjoint=False)
+        super(FDTD_TM, self).set_sources(src_arrays, domain, mindex)
         COMM.Barrier()
 
-    def __get_field(self, component, domain=None, adjoint=False):
-        ##Get the uninterpolated field component in the specified domain.
-        # The process is nearly identical for forward/adjoint
-        if(domain == None):
-            domain = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
-                                       self._dx, self._dy, 1.0)
+    def set_adjoint_sources(self, src):
+        super(FDTD_TM, self).set_adjoint_sources((src[0], -1*src[1], -1*src[2]))
 
-        if(component == FieldComponent.Hz):
-            if(adjoint): field = self._Ez_adj_t0
-            else: field = self._Ez_fwd_t0
-        elif(component == FieldComponent.Ex):
-            if(adjoint): field = self._Hx_adj_t0
-            else: field = self._Hx_fwd_t0
-        elif(component == FieldComponent.Ey):
-            if(adjoint): field = self._Hy_adj_t0
-            else: field = self._Hy_fwd_t0
+    def get_field(self, component, domain=None):
+        """Get the (raw, uninterpolated) field.
 
-        # get a "natural" representation of the appropriate field vector,
-        # gather it on the rank 0 node and return the appropriate piece
-        self._da.globalToNatural(field, self._vn)
-        scatter, fout = PETSc.Scatter.toZero(self._vn)
-        scatter.scatter(self._vn, fout, False, PETSc.Scatter.Mode.FORWARD)
+        In most cases, you should use :def:`get_field_interp` instead.
 
-        if(NOT_PARALLEL):
-            fout = np.array(fout, dtype=np.complex128)
-            fout = np.reshape(fout, [self._Ny, self._Nx])
-            return fout[domain.j, domain.k]
+        Parameters
+        ----------
+        component : str
+            The field component to retrieve
+        domain : misc.DomainCoordinates2D (optional)
+            The domain in which the field is retrieved. If None, retrieve the
+            field in the whole 3D domain (which you probably should avoid doing
+            for larger problems). (default = None)
+
+        Returns
+        -------
+        numpy.ndarray
+            An array containing the field.
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDTD_TM, self).get_field(te_comp, domain)
+
+        if(component == 'Hz'):
+            return -1 * field
         else:
-            return MathDummy()
+            return field
+
+    def get_adjoint_field(self, component, domain=None):
+        """Get the adjoint field.
+
+        Parameters
+        ----------
+        component : str
+            The adjoint field component to retrieve.
+        domain : misc.DomainCoordinates2D (optional)
+            The domain in which the field is retrieved. If None, retrieve the
+            field in the whole 3D domain (which you probably should avoid doing
+            for larger problems). (default = None)
+
+        Returns
+        -------
+        numpy.ndarray
+            An array containing the field.
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDTD_TM, self).get_adjoint_field(te_comp, domain)
+
+        if(component == 'Hz'):
+            return -1 * field
+        else:
+            return field
 
     def get_field_interp(self, component, domain=None, squeeze=False):
         """Get the desired field component.
@@ -1545,86 +1627,18 @@ class FDTD_TM(FDTD_TE):
         numpy.ndarray
             The interpolated field
         """
-        # Ez does not need to be interpolated
-        if(component == FieldComponent.Hz):
-            if(squeeze): return np.squeeze(self.get_field(component, domain))
-            else: return self.get_field(component, domain)
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDTD_TM, self).get_field_interp(te_comp, domain, squeeze)
+
+        if(component == 'Hz'):
+            return -1 * field
         else:
-            # if no domain was provided
-            if(domain == None):
-                domain_interp = DomainCoordinates(0, self._X, 0, self._Y, 0, 0,
-                                                  self._dx, self._dy, 1.0)
-                domain = domain_interp
-
-                k1 = domain_interp.k1; k2 = domain_interp.k2
-                j1 = domain_interp.j1; j2 = domain_interp.j2
-
-            # in order to properly handle interpolation at the boundaries, we
-            # need to expand the domain
-            else:
-                k1 = domain.k1; k2 = domain.k2
-                j1 = domain.j1; j2 = domain.j2
-
-                if(k1 > 0): k1 -= 1
-                if(k2 < self._Nx-1): k2 += 1
-                if(j1 > 0): j1 -= 1
-                if(j2 < self._Ny-1): j2 += 1
-
-                #domain_interp = DomainCoordinates2D(k1*self._dx, k2*self._dx,
-                #                                  j1*self._dy, j2*self._dy,
-                #                                  self._dx, self._dy)
-                domain_interp = DomainCoordinates(k1*self._dx, k2*self._dx,
-                                                  j1*self._dy, j2*self._dy,
-                                                  0, 0,
-                                                  self._dx, self._dy, 1.0)
-
-                k1 = domain_interp.k1; k2 = domain_interp.k2
-                j1 = domain_interp.j1; j2 = domain_interp.j2
-
-            fraw = self.get_field(component, domain_interp)
-
-            if(RANK != 0):
-                return MathDummy()
-
-            fraw = np.pad(fraw, 1, 'constant', constant_values=0)
-
-            # after interpolation, we will need to crop the field so that it
-            # matches the supplied domain
-            crop_field = lambda f : f[1+domain.j1-j1:-1-(j2-domain.j2), \
-                                      1+domain.k1-k1:-1-(k2-domain.k2)]
-
-            field = None
-            bc = self._bc
-
-            if(component == FieldComponent.Ex):
-                # handle special boundary conditions
-                if(j1 == 0 and bc[1] == 'E'):
-                    fraw[0, :] = -1*fraw[1, :]
-                elif(j1 == 0 and bc[1] == 'H'):
-                    fraw[0, :] = fraw[1, :]
-
-                Hx = np.copy(fraw)
-                Hx[1:, :] += fraw[0:-1, :]
-                Hx = Hx/2.0
-                field = crop_field(Hx)
-
-            elif(component == FieldComponent.Ey):
-                # Handle special boundary conditions
-                if(k1 == 0 and bc[0] == 'E'):
-                    fraw[:, 0] = -1*fraw[:,1]
-                elif(k1 == 0 and bc[0] == 'H'):
-                    fraw[:, 0] = fraw[:, 1]
-
-                Hy = np.copy(fraw)
-                Hy[:, 1:] += fraw[:, 0:-1]
-                Hy = Hy/2.0
-                field = crop_field(Hy)
-
-            else:
-                pass
-
-            if(squeeze): return np.squeeze(field)
-            else: return field
+            return field
 
     def get_source_power(self):
         """Get source power.
@@ -1660,46 +1674,73 @@ class FDTD_TM(FDTD_TE):
         y2 = DomainCoordinates(xmin, xmax, ymax, ymax, 0, 0, dx, dy, 1.0)
 
         # calculate power transmitter through xmin boundary
-        Ez = self.get_field_interp('Hz', x1)
-        Hy = self.get_field_interp('Ey', x1)
+        Hz = self.get_field_interp('Hz', x1)
+        Ey = self.get_field_interp('Ey', x1)
 
         if(NOT_PARALLEL and self._bc[0] != 'E' and self._bc[0] != 'H'):
-            Px = -0.5*dy*np.sum(np.real(-1*Ez*np.conj(Hy)))
-            #print Px
+            Px = 0.5*dy*np.sum(np.real(-1*Ey*np.conj(Hz)))
             Psrc += Px
-        del Ez; del Hy;
+        del Hz; del Ey;
 
         # calculate power transmitter through xmax boundary
-        Ez = self.get_field_interp('Hz', x2)
-        Hy = self.get_field_interp('Ey', x2)
+        Hz = self.get_field_interp('Hz', x2)
+        Ey = self.get_field_interp('Ey', x2)
 
         if(NOT_PARALLEL):
-            Px = 0.5*dy*np.sum(np.real(-1*Ez*np.conj(Hy)))
-            #print Px
+            Px = -0.5*dy*np.sum(np.real(-1*Ey*np.conj(Hz)))
             Psrc += Px
-        del Ez; del Hy;
+        del Hz; del Ey;
 
         # calculate power transmitter through ymin boundary
-        Ez = self.get_field_interp('Hz', y1)
-        Hx = self.get_field_interp('Ex', y1)
+        Hz = self.get_field_interp('Hz', y1)
+        Ex = self.get_field_interp('Ex', y1)
 
         if(NOT_PARALLEL and self._bc[1] != 'E' and self._bc[1] != 'H'):
-            Py = 0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
-            #print Py
+            Py = -0.5*dx*np.sum(np.real(-1*Ex*np.conj(Hz)))
             Psrc += Py
-        del Ez; del Hx;
+        del Hz; del Ex;
 
         # calculate power transmitter through ymax boundary
-        Ez = self.get_field_interp('Hz', y2)
-        Hx = self.get_field_interp('Ex', y2)
+        Hz = self.get_field_interp('Hz', y2)
+        Ex = self.get_field_interp('Ex', y2)
 
         if(NOT_PARALLEL):
-            Py = -0.5*dx*np.sum(np.real(-1*Ez*np.conj(Hx)))
-            #print Py
+            Py = 0.5*dx*np.sum(np.real(-1*Ex*np.conj(Hz)))
             Psrc += Py
-        del Ez; del Hx;
+        del Hz; del Ex;
 
         return Psrc
+
+    def get_A_diag(self):
+        """Get the diagonal entries of the system matrix A.
+
+        Parameters
+        ----------
+        vdiag : petsc4py.PETSc.Vec
+            Vector with dimensions Mx1 where M is equal to the number of
+            diagonal entries in A.
+
+        Returns
+        -------
+        **(Master node only)** the diagonal entries of A.
+        """
+        # We need to override this function since the TE matrix diagonals do
+        # not match the TM matrix diagonals (even when swapping eps and mu).
+        # This is because the signs on epsilon and mu in Maxwell's equations
+        # are flipped when moving from TE to TM.  In most cases, it is easiest
+        # to handle this change by swapping Ez with -Hz, Mx with -Jx, and My
+        # with -Jy in the TE equations, which can be achieved by simply
+        # overriding the corresponding setter and getter functions.  In
+        # reality, a better way to handle reusing the TE equations is to swap E
+        # and H, J and M, eps with -mu, and mu with -eps.  This way of doing
+        # things, however, is harder to achieve programmatically if we want to
+        # reuse as much of the TE code as possible.  When using the FDFD object
+        # with an AdjointMethod, it turns out that simply swapping field and
+        # source components is insufficient and knowledge of the A's diagonals
+        # is needed, hence this overriden function.
+        mu_z, eps_x, eps_y = super(FDTD_TM, self).get_A_diag()
+        
+        return (-1*mu_z, -1*eps_x, -1*eps_y)
 
 class GhostComm(object):
 

@@ -10,8 +10,7 @@ If you wish to increase the number of cores that the example is executed on,
 change 8 to the desired number of cores.
 """
 
-#import emopt
-import emopt2 as emopt
+import emopt
 from emopt.misc import NOT_PARALLEL
 
 import numpy as np
@@ -23,33 +22,32 @@ matplotlib.use('Agg')
 ####################################################################################
 X = 10.0
 Y = 7.0
-dx = 0.02
-dy = 0.02
+Z = 4.0
+dx = 0.05
+dy = 0.05
+dz = 0.05
 wavelength = 1.55
 
-sim = emopt.fdtd_2d.FDTD_TE(X,Y,dx,dy,wavelength, rtol=1e-5, min_rindex=1.44,
+sim = emopt.fdtd.FDTD(X,Y,Z,dx,dy,dz,wavelength, rtol=1e-5, min_rindex=1.44,
                       nconv=100)
 sim.Nmax = 1000*sim.Ncycle
-sim.courant_num = 0.9
-w_pml = dx * 50 # set the PML width
+sim.courant_num = 0.5
+w_pml = dx * 20 # set the PML width
 
-# we use symmetry boundary conditions at y=0 to speed things up. We
-# need to make sure to set the PML width at the minimum y boundary is set to
-# zero. Currently, FDTD cannot compute accurate gradients using symmetry in z
-# :(
-sim.w_pml = [w_pml, w_pml, w_pml, w_pml]
-sim.bc = '00'
+sim.w_pml = [w_pml, w_pml, w_pml, w_pml, w_pml, w_pml]
+sim.bc = '000'
 
 # get actual simulation dimensions
 X = sim.X
 Y = sim.Y
+Z = sim.Z
 
 
 ####################################################################################
 # Setup system materials
 ####################################################################################
 # Materials
-n0 = 1.44
+n0 = 1.0
 n1 = 3.0
 
 # set a background permittivity of 1
@@ -63,11 +61,11 @@ waveguide = emopt.grid.Rectangle(X/2, Y/2, 2*X, h_wg)
 waveguide.layer = 1
 waveguide.material_value = n1**2
 
-eps = emopt.grid.StructuredMaterial2D(X, Y, dx, dy)
-eps.add_primitive(waveguide)
-eps.add_primitive(eps_background)
+eps = emopt.grid.StructuredMaterial3D(X, Y, Z, dx, dy, dz)
+eps.add_primitive(waveguide, Z/2-0.25, Z/2+0.25)
+eps.add_primitive(eps_background, 0.0, Z)
 
-mu = emopt.grid.ConstantMaterial2D(1.0)
+mu = emopt.grid.ConstantMaterial3D(1.0)
 
 # set the materials used for simulation
 sim.set_materials(eps, mu)
@@ -77,24 +75,22 @@ sim.set_materials(eps, mu)
 ####################################################################################
 # setup the sources -- just a dipole in the center of the waveguide
 #src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, 0, 0, dx, dy, 1.0)
-
-#src_domain = emopt.misc.DomainCoordinates(0, X, 0, Y, 0, 0, dx, dy, 1.0)
-src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, 0, 0, dx, dy, 1.0)
-#Jz = np.zeros([M,N], dtype=np.complex128)
-#Mx = np.zeros([M,N], dtype=np.complex128)
-#My = np.zeros([M,N], dtype=np.complex128)
+src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, Z/2, Z/2, dx, dy, dz)
 
 M = src_domain.Nx
 N = src_domain.Ny
-print((M,N))
+O = src_domain.Nz
 
-Jz = np.zeros([N,M], dtype=np.complex128)
-Mx = np.zeros([N,M], dtype=np.complex128)
-My = np.zeros([N,M], dtype=np.complex128)
+Jx = np.zeros([O,N,M], dtype=np.complex128)
+Jy = np.zeros([O,N,M], dtype=np.complex128)
+Jz = np.zeros([O,N,M], dtype=np.complex128)
+Mx = np.zeros([O,N,M], dtype=np.complex128)
+My = np.zeros([O,N,M], dtype=np.complex128)
+Mz = np.zeros([O,N,M], dtype=np.complex128)
 
-Jz[0,0] = 1.0
+Jz[0,0,0] = 1.0
 
-src = [Jz, Mx, My]
+src = [Jx, Jy, Jz, Mx, My, Mz]
 sim.set_sources(src, src_domain)
 
 ####################################################################################
@@ -105,8 +101,9 @@ sim.solve_forward()
 
 # Get the fields we just solved for
 # define a plane using a DomainCoordinates with no z-thickness
-sim_area = emopt.misc.DomainCoordinates(0, X, 0, Y, 0, 0, dx, dy, 1.0)
+sim_area = emopt.misc.DomainCoordinates(0, X, 0, Y, Z/2, Z/2, dx, dy, dz)
 Ez = sim.get_field_interp('Ez', sim_area)
+Ez = Ez.squeeze()
 
 # Simulate the field.  Since we are running this using MPI, we only generate
 # plots in the master process (otherwise we would end up with a bunch of
@@ -122,7 +119,7 @@ if(NOT_PARALLEL):
     im = ax.imshow(Ez.real, extent=extent,
                             vmin=-np.max(Ez.real)/1.0,
                             vmax=np.max(Ez.real)/1.0,
-                            cmap='jet',interpolation='nearest')
+                            cmap='seismic',interpolation='nearest')
 
     # Plot the waveguide boundaries
     ax.plot(extent[0:2], [Y/2-h_wg/2, Y/2-h_wg/2], 'k-')

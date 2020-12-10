@@ -1,5 +1,3 @@
-"""Miscellanious functions useful for simulation and optimization.
-"""
 from __future__ import print_function
 
 from builtins import object
@@ -8,21 +6,25 @@ from scipy import interpolate
 from math import pi
 import os
 
-from petsc4py import PETSc
-#import decorator # so that sphinx will document decorated functions :S
+from mpi4py import MPI
 import warnings, inspect
 
-__author__ = "Andrew Michaels"
-__license__ = "GPL License, Version 3.0"
-__version__ = "2019.5.6"
-__maintainer__ = "Andrew Michaels"
-__status__ = "development"
+GLOBAL_COMM = MPI.COMM_WORLD
 
-# functions and variables useful for MPI stuff
-COMM = PETSc.COMM_WORLD.tompi4py()
-RANK = PETSc.COMM_WORLD.getRank()
+GLOBAL_RANK = GLOBAL_COMM.Get_rank()
+GLOBAL_SIZE = GLOBAL_COMM.Get_size()
+
+comm = GLOBAL_COMM.Split(color = GLOBAL_RANK//16, key=GLOBAL_RANK)
+
+import petsc4py
+petsc4py.init(comm=comm)
+from petsc4py import PETSc
+pcomm = PETSc.COMM_WORLD
+
+COMM = pcomm.tompi4py()
+RANK = pcomm.getRank()
 NOT_PARALLEL = (RANK == 0)
-N_PROC = PETSc.COMM_WORLD.getSize()
+N_PROC = pcomm.getSize()
 
 def run_on_master(func):
     """Prevent a decorated function from running on any node but the master
