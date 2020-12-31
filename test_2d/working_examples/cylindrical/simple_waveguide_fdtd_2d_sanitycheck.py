@@ -31,8 +31,8 @@ for i in range(1):
     ####################################################################################
     X = 10.0
     Y = 5.0
-    dx = 0.01
-    dy = 0.01
+    dx = 0.005
+    dy = 0.005
     wavelength = 1.55
     
     if i==0:
@@ -44,7 +44,7 @@ for i in range(1):
 
     sim.Nmax = 1000*sim.Ncycle
     sim.courant_num = 0.9
-    w_pml = dx * 100 # set the PML width
+    w_pml = dx * 120 # set the PML width
     
     # we use symmetry boundary conditions at y=0 to speed things up. We
     # need to make sure to set the PML width at the minimum y boundary is set to
@@ -74,13 +74,21 @@ for i in range(1):
     # Create a high index waveguide through the center of the simulation
     h_wg = 0.5
     #waveguide = emopt.grid.Rectangle(X/2, Y/2, 2*X, h_wg)
-    waveguide = emopt.grid.Rectangle(X/2+0.8, 0, 1.0, 1.0)
-    waveguide.layer = 1
+    #waveguide = emopt.grid.Rectangle(X/2+0.8, 0, 1.0, 1.0)
+    #waveguide.layer = 1
+    #waveguide.material_value = n1**2
+
+    #waveguide2 = emopt.grid.Rectangle(X/2-0.8, 0, 1.0, 1.0)
+    #waveguide2.layer = 1
+    #waveguide2.material_value = n1**2
+
+    waveguide = emopt.grid.Rectangle(X/2, 0, 10.0, 1.0)
+    waveguide.layer = 2
     waveguide.material_value = n1**2
 
-    waveguide2 = emopt.grid.Rectangle(X/2-0.8, 0, 1.0, 1.0)
+    waveguide2 = emopt.grid.Rectangle(X/2, 0, 10.0, 0.6)
     waveguide2.layer = 1
-    waveguide2.material_value = n1**2
+    waveguide2.material_value = 2.5**2
     
     eps = emopt.grid.StructuredMaterial2D(X, Y, dx, dy)
     eps.add_primitive(waveguide)
@@ -101,7 +109,7 @@ for i in range(1):
     #src_domain = emopt.misc.DomainCoordinates(0, X, 0, Y, 0, 0, dx, dy, 1.0)
     #src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/2, Y/2, 0, 0, dx, dy, 1.0)
     #src_domain = emopt.misc.DomainCoordinates(X/2, X/2, 0, 0, 0, 0, dx, dy, 1.0)
-    src_domain = emopt.misc.DomainCoordinates(X/2, X/2, 0, 0, 0, 0, dx, dy, 1.0)
+    src_domain = emopt.misc.DomainCoordinates(X/2, X/2, Y/4, Y/4, 0, 0, dx, dy, 1.0)
     #Jz = np.zeros([M,N], dtype=np.complex128)
     #Mx = np.zeros([M,N], dtype=np.complex128)
     #My = np.zeros([M,N], dtype=np.complex128)
@@ -114,7 +122,7 @@ for i in range(1):
     Mx = np.zeros([N,M], dtype=np.complex128)
     My = np.zeros([N,M], dtype=np.complex128)
     
-    Mx[0,0] = 1.0
+    Jz[0,0] = 1.0
     
     src = [Jz, Mx, My]
     sim.set_sources(src, src_domain)
@@ -131,7 +139,7 @@ for i in range(1):
     #Ez.append(sim.get_field_interp('Ez', sim_area))
     #Hy.append(sim.get_field_interp('Hy', sim_area))
     #Hx.append(sim.get_field_interp('Hx', sim_area))
-    Hz.append(sim.get_field_interp('Ey', sim_area))
+    Hz.append(sim.get_field_interp('Hz', sim_area))
     #Ey.append(sim.get_field_interp('Ey', sim_area))
     #Ex.append(sim.get_field_interp('Ex', sim_area))
     #E2 = (Ez*Ez.conj()).real
@@ -152,27 +160,31 @@ HH = np.sqrt((Hz[0]*Hz[0].conj()).real)
 #print(np.linalg.norm(Hy[0]-Hy[1]))
 
 if(NOT_PARALLEL):
+    Hz2 = -1*np.flipud(Hz[0])
+    HHH = np.concatenate((Hz2,Hz[0]),axis=0).transpose()
     import matplotlib.pyplot as plt
 
-    extent = sim_area.get_bounding_box()[0:4]
+    #extent = sim_area.get_bounding_box()[0:4]
+    #extent = [0, X, 0, 2*Y]
+    extent = [0, 2*Y, 0, X]
 
     f = plt.figure()
     ax = f.add_subplot(111)
-    im = ax.imshow(Hz[0].real, extent=extent,
+    im = ax.imshow(HHH.real, extent=extent,
                             #vmin=-np.max(HH)/1.0,
                             #vmin=0.0,
                             #vmax=0.0001,
-                            vmin=-np.max(Hz[0].real)/1.0,
-                            vmax=np.max(Hz[0].real)/1.0,
+                            vmin=-np.max(-Hz[0].real)/1.0,
+                            vmax=np.max(-Hz[0].real)/1.0,
                             #cmap='jet',interpolation='nearest')
-                            cmap='seismic')
+                            cmap='jet')
 
     # Plot the waveguide boundaries
     #ax.plot(extent[0:2], [Y/2-h_wg/2, Y/2-h_wg/2], 'k-')
     #ax.plot(extent[0:2], [Y/2+h_wg/2, Y/2+h_wg/2], 'k-')
 
-    ax.set_title('E$_z$', fontsize=18)
+    ax.set_title('E$_p$', fontsize=18)
     ax.set_xlabel('x [um]', fontsize=14)
     ax.set_ylabel('y [um]', fontsize=14)
     f.colorbar(im)
-    plt.savefig('simple_waveguide_fdtd_cyl2.pdf')
+    plt.savefig('simple_waveguide_fdtd_cyl2_bla.pdf')

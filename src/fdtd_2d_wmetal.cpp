@@ -339,6 +339,7 @@ void fdtd_2d::FDTD_TE::update_H(int n, double t)
     }
 }
 
+
 void fdtd_2d::FDTD_TE::update_E(int n, double t)
 {
     double odx = _R/_dx,
@@ -444,7 +445,42 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
 
             ind_global = j*_K + k;
 
-#ifdef COMPLEX_EPS
+#if defined(COMPLEX_EPS) && defined(DISPERSIVE)
+            // calculate permittivity quantities
+            if(!_complex_eps) {
+                a_z = 1.0;
+                b_z = _dt/_eps_z[ind_global].real;
+            }
+            else {
+                epsz = _eps_z[ind_global];
+                //if(epsz.real<0.0) {
+                //    std::cout << epsz.imag << '\n';
+                //    std::cout << epsz.real << '\n';
+                //}
+
+                epszr_by_dt = epsz.real*_odt;
+
+                epszi_by_2 = epsz.imag*0.5;
+
+                epsinf = _epsinf[ind_global];
+                vu = _vu[ind_global];
+                wp2 = _wp2[ind_global];
+
+                factor = wp2 / (2*_odt+nu); // eps_0? R? Sc?
+
+                // The update equations have the following form:
+                // E_{i,t+1} = a_i * E_{i,t} + curl(H)_{i,t} / b_x
+                // where i is the spatial component, t is the time step,
+                // and a_i and b_i are conefficients which depend on
+                // the relative permittivities and time step
+                b_z = 1.0/(epszr_by_dt + epszi_by_2 + factor);
+
+                a_z = b_z * (epszr_by_dt - epszi_by_2 - factor);
+
+                c_z = b_z * (3.0*_odt - 0.5*nu) / (2.0*_dt + nu) ;
+            }
+
+#elif defined(COMPLEX_EPS) && !defined(DISPERSIVE)
             // calculate permittivity quantities
             if(!_complex_eps) {
                 a_z = 1.0;
@@ -470,6 +506,7 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
 
                 b_z = 1.0/(epszr_by_dt + epszi_by_2);
             }
+
 #else
             a_z = 1.0;
             b_z = _dt/_eps_z[ind_global].real;
@@ -479,7 +516,10 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
             dHydx = odx * (_Hy[ind_jk] - _Hy[ind_jkm1]);
             dHxdy = ody * (_Hx[ind_jk] - _Hx[ind_jm1k]);
 
-            _Ez[ind_jk] = a_z * _Ez[ind_jk] + (dHydx - dHxdy) * b_z;
+            // NEW
+            //_Ez[ind_jk] = a_z * _Ez[ind_jk] + (dHydx - dHxdy) * b_z;
+            _Ez[ind_jk] = a_z * _Ez[ind_jk] + (dHydx - dHxdy) * b_z + _Jp[ind_jk] * c_z;
+            // NEW
 
             
             // Do PML updates
@@ -578,6 +618,46 @@ void fdtd_2d::FDTD_TE::update_E(int n, double t)
         }
     }
 }
+
+#ifdef DISPERSIVE
+void fdtd_2d::FDTD_TE::update_Jp(int n, double t)
+{
+    double odx = _R/_dx,
+           ody = _R/_dy,
+           b, C, kappa,
+           src_t,
+           a_z, b_z;
+
+    for(int j = 0; j < _J; j++) {
+        for(int k = 0; k < _K; k++) {
+            //ind_jk = (_J+2)*(_K+2) + (j+1)*(_K+2) + k + 1;
+            //ind_jm1k = (_J+2)*(_K+2) + (j)*(_K+2) + k + 1;
+            //ind_jkm1 = (_J+2)*(_K+2) + (j+1)*(_K+2) + k;
+
+            //ind_global = j*_K + k;
+
+            ind_jk = (j+1)*(_K+2) + k + 1;
+            ind_jm1k = (j)*(_K+2) + k + 1;
+            ind_jkm1 = (j+1)*(_K+2) + k;
+
+            ind_global = j*_K + k;
+
+            epsinf = _epsinf[ind_global];
+            vu = _vu[ind_global];
+            wp2 = _wp2[ind_global];
+
+            factor = wp2 / (2*_odt + nu); // eps_0? R? Sc?
+
+
+            // Update Ez
+            dHydx = odx * (_Hy[ind_jk] - _Hy[ind_jkm1]);
+            dHxdy = ody * (_Hx[ind_jk] - _Hx[ind_jm1k]);
+
+            _Jp[ind_jk] = (2.0*_odt - nu) / (2.0*_odt + nu) * _Jp[ind_jk] + factor * (_Ez[ind_ijk] + _Ezm1[ind_ijk]);
+        }
+    }
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////
 // PML Management
