@@ -43,14 +43,13 @@ from __future__ import absolute_import
 from builtins import object
 from . import fdfd # this needs to come first
 from .misc import info_message, warning_message, error_message, RANK, \
-NOT_PARALLEL, run_on_master, COMM, petsc4py, MPI, GLOBAL_COMM, GLOBAL_RANK, \
-GLOBAL_SIZE, N_PROC
+NOT_PARALLEL, run_on_master, COMM
 
 import numpy as np
 from math import pi
 from abc import ABCMeta, abstractmethod
-#from petsc4py import PETSc
-#from mpi4py import MPI
+from petsc4py import PETSc
+from mpi4py import MPI
 from scipy.optimize import minimize
 
 __author__ = "Andrew Michaels"
@@ -171,7 +170,7 @@ class Optimizer(object):
         self.bounds = bounds
         self.scipy_verbose = scipy_verbose
 
-        self._comm = GLOBAL_COMM
+        self._comm = MPI.COMM_WORLD
 
     def run(self):
         """Run the optimization.
@@ -186,7 +185,7 @@ class Optimizer(object):
         command = None
         running = True
         params = np.zeros(self.p0.shape)
-        if(GLOBAL_RANK == 0):
+        if(RANK == 0):
             fom, params = self.run_sequence(self.am)
         else:
             while(running):
@@ -206,8 +205,8 @@ class Optimizer(object):
             params = None
 
         # share the final fom and parameters with all processes
-        fom = GLOBAL_COMM.bcast(fom, root=0)
-        params = GLOBAL_COMM.bcast(params, root=0)
+        fom = COMM.bcast(fom, root=0)
+        params = COMM.bcast(params, root=0)
 
         return fom, params
 

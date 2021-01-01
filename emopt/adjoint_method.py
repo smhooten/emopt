@@ -156,7 +156,7 @@ from . import fdfd
 from . import fdtd
 from . import fdtd_2d
 from .misc import info_message, warning_message, error_message, RANK, \
-NOT_PARALLEL, run_on_master, N_PROC, COMM, petsc4py, MPI
+NOT_PARALLEL, run_on_master, N_PROC, COMM
 from . import fomutils
 
 import numpy as np

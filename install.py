@@ -35,7 +35,7 @@ from subprocess import call
 from argparse import ArgumentParser
 
 # EMopt parameters
-emopt_dep_file = ".emopt_deps"
+emopt_dep_file = "~/.emopt_deps"
 
 # Package Parameters
 EIGEN_VERSION = "3.3.7"

@@ -48,14 +48,14 @@ slepc4py.init(sys.argv)
 
 from .defs import FieldComponent
 from .misc import info_message, warning_message, error_message, \
-NOT_PARALLEL, run_on_master, MathDummy, COMM, petsc4py, MPI
+NOT_PARALLEL, run_on_master, MathDummy
 
 from . import grid
 
 from abc import ABCMeta, abstractmethod
-#from petsc4py import PETSc
-#from slepc4py import SLEPc
-#from mpi4py import MPI
+from petsc4py import PETSc
+from slepc4py import SLEPc
+from mpi4py import MPI
 import numpy as np
 
 __author__ = "Andrew Michaels"

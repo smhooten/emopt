@@ -9,22 +9,26 @@ import os
 from mpi4py import MPI
 import warnings, inspect
 
-GLOBAL_COMM = MPI.COMM_WORLD
+#GLOBAL_COMM = MPI.COMM_WORLD
+#
+#GLOBAL_RANK = GLOBAL_COMM.Get_rank()
+#GLOBAL_SIZE = GLOBAL_COMM.Get_size()
+#
+#comm = GLOBAL_COMM.Split(color = GLOBAL_RANK//16, key=GLOBAL_RANK)
 
-GLOBAL_RANK = GLOBAL_COMM.Get_rank()
-GLOBAL_SIZE = GLOBAL_COMM.Get_size()
-
-comm = GLOBAL_COMM.Split(color = GLOBAL_RANK//16, key=GLOBAL_RANK)
-
-import petsc4py
-petsc4py.init(comm=comm)
+#import petsc4py
+#petsc4py.init(comm=comm)
 from petsc4py import PETSc
-pcomm = PETSc.COMM_WORLD
+#pcomm = PETSc.COMM_WORLD
+#
+#COMM = pcomm.tompi4py()
+#RANK = pcomm.getRank()
+#N_PROC = pcomm.getSize()
+COMM = PETSc.COMM_WORLD.tompi4py()
+RANK = PETSc.COMM_WORLD.getRank()
+N_PROC = PETSc.COMM_WORLD.getSize()
 
-COMM = pcomm.tompi4py()
-RANK = pcomm.getRank()
 NOT_PARALLEL = (RANK == 0)
-N_PROC = pcomm.getSize()
 
 def run_on_master(func):
     """Prevent a decorated function from running on any node but the master

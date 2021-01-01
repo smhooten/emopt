@@ -27,17 +27,17 @@ from builtins import object
 from .simulation import MaxwellSolver
 from .defs import FieldComponent
 from .misc import DomainCoordinates, RANK, MathDummy, NOT_PARALLEL, COMM, \
-info_message, warning_message, N_PROC, run_on_master, petsc4py, MPI
+info_message, warning_message, N_PROC, run_on_master
 from .fdtd_ctypes import libFDTD
 from .modes import ModeFullVector
-#import petsc4py
+import petsc4py
 import sys
-#petsc4py.init(sys.argv)
+petsc4py.init(sys.argv)
 
 from petsc4py import PETSc
 import numpy as np
 from math import pi
-#from mpi4py import MPI
+from mpi4py import MPI
 import sys
 
 __author__ = "Andrew Michaels"
