@@ -89,6 +89,7 @@ class MMISplitterAdjointMethod(AdjointMethodPNF3D):
 
         return fom
 
+    @run_on_master
     def calc_dfdx(self, sim, params):
         """Calculate the figure of merit with respect to E and H.
 
@@ -234,9 +235,6 @@ Ezm = fom_mode.get_field_interp(0, 'Ez')
 Hxm = fom_mode.get_field_interp(0, 'Hx')
 Hym = fom_mode.get_field_interp(0, 'Hy')
 Hzm = fom_mode.get_field_interp(0, 'Hz')
-print(Ezm.shape)
-print(Hxm.shape)
-print(Hym.shape)
 
 mode_match = emopt.fomutils.ModeMatch([1,0,0], dy, dz, Exm, Eym, Ezm,
                                       Hxm, Hym, Hzm)

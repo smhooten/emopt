@@ -10,8 +10,7 @@ If you wish to increase the number of cores that the example is executed on,
 change 8 to the desired number of cores.
 """
 
-#import emopt
-import emopt2 as emopt
+import emopt
 from emopt.misc import NOT_PARALLEL
 
 import numpy as np

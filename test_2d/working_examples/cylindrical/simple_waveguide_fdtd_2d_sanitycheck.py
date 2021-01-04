@@ -10,8 +10,7 @@ If you wish to increase the number of cores that the example is executed on,
 change 8 to the desired number of cores.
 """
 
-#import emopt
-import emopt2 as emopt
+import emopt
 from emopt.misc import NOT_PARALLEL
 
 import numpy as np
@@ -31,8 +30,8 @@ for i in range(1):
     ####################################################################################
     X = 10.0
     Y = 5.0
-    dx = 0.005
-    dy = 0.005
+    dx = 0.02
+    dy = 0.02
     wavelength = 1.55
     
     if i==0:
