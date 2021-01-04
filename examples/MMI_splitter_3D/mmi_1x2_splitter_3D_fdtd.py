@@ -234,9 +234,9 @@ Ezm = fom_mode.get_field_interp(0, 'Ez')
 Hxm = fom_mode.get_field_interp(0, 'Hx')
 Hym = fom_mode.get_field_interp(0, 'Hy')
 Hzm = fom_mode.get_field_interp(0, 'Hz')
-print Ezm.shape
-print Hxm.shape
-print Hym.shape
+print(Ezm.shape)
+print(Hxm.shape)
+print(Hym.shape)
 
 mode_match = emopt.fomutils.ModeMatch([1,0,0], dy, dz, Exm, Eym, Ezm,
                                       Hxm, Hym, Hzm)
