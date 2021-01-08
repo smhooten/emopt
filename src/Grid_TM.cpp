@@ -11,15 +11,27 @@ using namespace Grid;
 //------------------------------ Grid Material ------------------------------------/
 GridMaterial2D::GridMaterial2D(int M, int N, ArrayXXcd grid) : _M(M), _N(N), _grid(grid) {}
 
-std::complex<double> GridMaterial2D::get_value(double x, double y)
+//std::complex<double> GridMaterial2D::get_value(double x, double y)
+//{
+//    int xx = int(x),
+//        yy = int(y);
+//
+//	if(xx > 0 && xx < _M && yy > 0 && yy < _N) 
+//		return _grid(yy,xx);
+//	else
+//		return 1.0;
+//}
+void GridMaterial2D::get_value(double x, double y, std::complex<double>* matval)
 {
     int xx = int(x),
         yy = int(y);
 
 	if(xx > 0 && xx < _M && yy > 0 && yy < _N) 
-		return _grid(yy,xx);
+                matval[0] = _grid(yy,xx);
+		//return _grid(yy,xx);
 	else
-		return 1.0;
+                matval[0] = 1.0;
+		//eturn 1.0;
 }
 
 
@@ -83,19 +95,19 @@ double GridCell::get_intersect_angle(const Polygon_2D poly)
            xp1, yp1,
            xx, yy;
 
-    Polygon_2D output;
-    boost::geometry::intersection(poly, _verts, output);
+    std::deque<Polygon_2D> output;
+    boost::geometry::intersection(poly, _verts[0], output);
 
-    std::vector<Point_2D>& out_outer = output.outer();
-    std::vector<Point_2D>& vert_outer = _verts.outer();
+    std::vector<Point_2D>& out_outer = output[0].outer();
+    std::vector<Point_2D>& vert_outer = _verts[0].outer();
 
     for(int i=0; i!=out_outer.size(); ++i) {
-        x1 = boost:geometry::get<0>(out_outer[i]);
-        y1 = boost:geometry::get<1>(out_outer[i]);
+        x1 = boost::geometry::get<0>(out_outer[i]);
+        y1 = boost::geometry::get<1>(out_outer[i]);
 
         for(int j=0; j!=vert_outer.size(); ++j) {
-            x2 = boost:geometry::get<0>(vert_outer[j]);
-            y2 = boost:geometry::get<1>(vert_outer[j]);
+            x2 = boost::geometry::get<0>(vert_outer[j]);
+            y2 = boost::geometry::get<1>(vert_outer[j]);
             if(x1==x2 && y1==y2) {
                 break;
             }
@@ -118,8 +130,8 @@ double GridCell::get_intersect_angle(const Polygon_2D poly)
                    yp1 = boost::geometry::get<1>(out_outer[0]);
                }
                for(int k=0; k!=vert_outer.size(); ++k) {
-                   xx = boost:geometry::get<0>(vert_outer[j]);
-                   yy = boost:geometry::get<1>(vert_outer[j]);
+                   xx = boost::geometry::get<0>(vert_outer[j]);
+                   yy = boost::geometry::get<1>(vert_outer[j]);
 
                    if(xx==xm1 && yy==ym1) {
                        xx0=x1;
@@ -209,6 +221,11 @@ bool MaterialPrimitive::operator<(const MaterialPrimitive& rhs)
 
 Circle::Circle(double x0, double y0, double r) : _x0(x0), _y0(y0), _r(r) {}
 Circle::~Circle() {}
+
+double get_intersect_angle(GridCell& cell)
+{
+    return 0.0;
+}
 
 bool Circle::contains_point(double x, double y)
 {
@@ -524,10 +541,12 @@ void StructuredMaterial2D::add_primitives(std::list<MaterialPrimitive*> primitiv
 void StructuredMaterial2D::get_values(ArrayXcd& grid, int k1, int k2, int j1, int j2, double sx, double sy)
 {
     int N = k2 - k1;
+    std::complex<double> retval[4];
 
     for(int j = j1; j < j2; j++) {
         for(int k = k1; k < k2; k++) {
-            grid((j-j1)*N+k-k1) = get_value(k+sx, j+sy);
+            //grid((j-j1)*N+k-k1) = get_value(k+sx, j+sy, retval);
+            get_value(k+sx, j+sy, retval);
         }
     }
 }
@@ -536,11 +555,11 @@ void StructuredMaterial2D::get_values(ArrayXcd& grid, int k1, int k2, int j1, in
 // Note that there are a few situations where this average will not quite be what they
 // should be.  In particular, if three or more materials intersect a cell, this 
 // average will begin to deviate from the "correct" average
-//void StructuredMaterial2D::get_value(double x, double y, std::complex<double>* retval)
-std::vector<std::complex<double>> StructuredMaterial2D::get_value(double x, double y)
+//std::vector<std::complex<double>> StructuredMaterial2D::get_value(double x, double y)
+void StructuredMaterial2D::get_value(double x, double y, std::complex<double>* retval)
 {
 	//std::complex<double> val = 0.0;
-	std::vector<std::complex<double>> retval;
+	//std::vector<std::complex<double>> retval;
 	std::list<MaterialPrimitive*>::iterator it = _primitives.begin();
 	MaterialPrimitive* prim;
 	GridCell cell;
@@ -556,24 +575,25 @@ std::vector<std::complex<double>> StructuredMaterial2D::get_value(double x, doub
 		   overlap = 1.0;
 
         std::complex<double> matval;
-        std::complex<double> reg_mean;
-        std::complex<double> harm_mean;
-        double phi;
+        //complex64 matval;
+        std::complex<double> reg_mean = 0.0;
+        std::complex<double> harm_mean = 0.0;
+        double phi =0.0;
 
     bool contains_p1,
          contains_p2,
          contains_p3,
          contains_p4;
 
-    bool flag1=false;
-         //flag2=false;
+    bool flag1=false,
+         flag2=false;
 
 	cell.set_vertices(xmin,xmax,ymin,ymax);
 	cell_copy.set_vertices(xmin,xmax,ymin,ymax);
 	
 	if(_primitives.size() == 0) {
 		std::cerr << "Error: StructuredMaterial list is empty." << std::endl;
-		return 0.0;
+		//return 0.0;
 	}
 
 	//std::cout << "------------------------" << std::endl;
@@ -590,22 +610,25 @@ std::vector<std::complex<double>> StructuredMaterial2D::get_value(double x, doub
 		   contains_p3 && contains_p4 &&
 		   cell.get_area_ratio() == 1.0) 
 		{
+                    //prim->get_material(xd,yd,matval);
                     matval = prim->get_material(xd,yd);
                     retval[0] = matval;
                     retval[1] = 0.0;
                     retval[2] = 0.0;
                     retval[3] = matval;
-                    //flag2=true;
-                    //break;
-                    return retval;
+                    flag2=true;
+                    break;
+                    //return retval;
                     // return prim->get_material(xd,yd);
 		}
 		else if(contains_p1 || contains_p2 ||
 		        contains_p3 || contains_p4) 
 		{
 			overlap = prim->get_cell_overlap(cell);
-                        reg_mean += overlap * prim->get_material(xd,yd);
-                        harm_mean += overlap / prim->get_material(xd,yd);
+                        //prim->get_material(xd,yd,matval);
+                        matval = prim->get_material(xd,yd);
+                        reg_mean += overlap * matval;
+                        harm_mean += overlap / matval;
 
 			//val += overlap * prim->get_material(xd,yd);
 			if(!flag1) {
@@ -622,32 +645,34 @@ std::vector<std::complex<double>> StructuredMaterial2D::get_value(double x, doub
 	}
 
 	// assume background has index of 1.0
-	if(cell.get_area_ratio() > 0) {
-                reg_mean += cell.get_area_ratio()*1.0;
-                harm_mean += cell.get_area_ratio() / 1.0;
-	}
+	if(!flag2) {
+	    if(cell.get_area_ratio() > 0) {
+                    reg_mean += cell.get_area_ratio()*1.0;
+                    harm_mean += cell.get_area_ratio() / 1.0;
+	    }
 
-        Eigen::Matrix2cd R;
-        Eigen::Matrix2cd M;
-        Eigen::Matrix2cd result;
+            Eigen::Matrix2cd R;
+            Eigen::Matrix2cd M;
+            Eigen::Matrix2cd result;
 
-        R(0,0) = std::cos(phi);
-        R(0,1) = std::sin(phi);
-        R(1,0) = std::sin(phi);
-        R(1,1) = -1*std::cos(phi);
+            R(0,0) = std::cos(phi);
+            R(0,1) = std::sin(phi);
+            R(1,0) = std::sin(phi);
+            R(1,1) = -1*std::cos(phi);
 
-        M(0,0) = 1.0/harm_mean;
-        M(0,1) = 0.0;
-        M(1,0) = 0.0;
-        M(1,1) = reg_mean;
+            M(0,0) = 1.0/harm_mean;
+            M(0,1) = 0.0;
+            M(1,0) = 0.0;
+            M(1,1) = reg_mean;
 
-        result = R * M * R;
+            result = R * M * R;
 
-        retval[0] = result(0,0);
-        retval[1] = result(0,1);
-        retval[2] = result(1,0);
-        retval[3] = result(1,1);
-        return retval;
+            retval[0] = result(0,0);
+            retval[1] = result(0,1);
+            retval[2] = result(1,0);
+            retval[3] = result(1,1);
+            //return retval;
+        }
 }
 
 
@@ -664,9 +689,14 @@ ConstantMaterial2D::ConstantMaterial2D(std::complex<double> value)
     _value = value;
 }
 
-std::complex<double> ConstantMaterial2D::get_value(double x, double y)
+//std::complex<double> ConstantMaterial2D::get_value(double x, double y)
+//{
+//    return _value;
+//}
+void ConstantMaterial2D::get_value(double x, double y, std::complex<double>* matval)
 {
-    return _value;
+    matval[0] = _value;
+    //return _value;
 }
 
 void ConstantMaterial2D::get_values(ArrayXcd& grid, int k1, int k2, int j1, int j2, double sx, double sy)
@@ -689,6 +719,9 @@ std::complex<double> ConstantMaterial2D::get_material()
 {
     return _value;
 }
+
+
+/*
 
 ////////////////////////////////////////////////////////////////////////////////////
 // ConstantMaterial3D
@@ -998,3 +1031,4 @@ void StructuredMaterial3D::get_values(ArrayXcd& grid, int k1, int k2,
 
     _cache_active = false;
 }
+*/

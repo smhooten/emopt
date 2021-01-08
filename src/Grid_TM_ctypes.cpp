@@ -1,4 +1,4 @@
-#include "Grid_ctypes.hpp"
+#include "Grid_TM_ctypes.hpp"
 #include <string>
 #include <Eigen/Core>
 #include <Eigen/Dense>
@@ -7,17 +7,15 @@
 // Material2D
 /////////////////////////////////////////////////////////////////////////////////////
 
-void Material2D_get_value(Material2D* mat, complex64* val, double x, double y) { 
-    std::vector<std::complex<double>> value = mat->get_value(x,y);
+void Material2D_get_value(Material2D* mat, complex64* val, double x, double y, int size) { 
+    //std::vector<std::complex<double>> value = mat->get_value(x,y);
+    std::complex<double> retval[4];
+    mat->get_value(x,y,retval);
 
-    val[0].real = std::real(value);
-    val[0].imag = std::imag(value);
-    val[1].real = std::real(value);
-    val[1].imag = std::imag(value);
-    val[2].real = std::real(value);
-    val[2].imag = std::imag(value);
-    val[3].real = std::real(value);
-    val[3].imag = std::imag(value);
+    for(int i=0; i==size; i++) {
+        val[i].real = std::real(retval[i]);
+        val[i].imag = std::imag(retval[i]);
+    }
 }
 
 void Material2D_get_values(Material2D* mat, complex64* arr, 
@@ -279,122 +277,122 @@ double ConstantMaterial2D_get_material_imag(ConstantMaterial2D* cm)
 // Material3D
 /////////////////////////////////////////////////////////////////////////////////////
 
-void Material3D_get_value(Material3D* mat, complex64* val, double x, double y, double z) { 
-	std::complex<double> value = mat->get_value(x,y,z);
-
-    val[0].real = std::real(value);
-    val[0].imag = std::imag(value);
-}
-
-void Material3D_get_values(Material3D* mat, complex64* arr, int k1, int k2, 
-                                                            int j1, int j2,
-                                                            int i1, int i2,
-                                                            double sx, double sy,
-                                                            double sz)
-{
-    std::complex<double> val;
-    int Ny = j2-j1,
-        Nx = k2-k1,
-        Nz = i2-i1;
-
-	ArrayXcd grid(Nx*Ny*Nz);
-    mat->get_values(grid, k1, k2, j1, j2, i1, i2, sx, sy, sz);
-
-    for(int i = 0; i < Nx*Ny*Nz; i++) {
-        val = grid(i);
-        arr[i].real = std::real(val);
-        arr[i].imag = std::imag(val);
-    }
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-// ConstantMaterial3D
-/////////////////////////////////////////////////////////////////////////////////////
-ConstantMaterial3D* ConstantMaterial3D_new(double real, double imag)
-{
-    return new ConstantMaterial3D(std::complex<double>(real, imag));
-}
-
-void ConstantMaterial3D_set_material(ConstantMaterial3D* cm, double real, double imag)
-{
-    cm->set_material(std::complex<double>(real, imag));
-}
-
-double ConstantMaterial3D_get_material_real(ConstantMaterial3D* cm)
-{
-    return std::real(cm->get_material());
-}
-
-double ConstantMaterial3D_get_material_imag(ConstantMaterial3D* cm)
-{
-    return std::imag(cm->get_material());
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-// Structured3DMaterial
-/////////////////////////////////////////////////////////////////////////////////////
-StructuredMaterial3D* StructuredMaterial3D_new(double X, double Y, double Z,
-                                               double dx, double dy, double dz)
-{
-    return new StructuredMaterial3D(X, Y, Z, dx, dy ,dz);
-}
-
-void StructuredMaterial3D_delete(StructuredMaterial3D* sm)
-{
-    delete sm;
-}
-
-void StructuredMaterial3D_add_primitive(StructuredMaterial3D* sm, 
-                                        MaterialPrimitive* prim, 
-                                        double z1, double z2)
-{
-  sm->add_primitive(prim, z1, z2);  
-}
+//void Material3D_get_value(Material3D* mat, complex64* val, double x, double y, double z) { 
+//	std::complex<double> value = mat->get_value(x,y,z);
+//
+//    val[0].real = std::real(value);
+//    val[0].imag = std::imag(value);
+//}
+//
+//void Material3D_get_values(Material3D* mat, complex64* arr, int k1, int k2, 
+//                                                            int j1, int j2,
+//                                                            int i1, int i2,
+//                                                            double sx, double sy,
+//                                                            double sz)
+//{
+//    std::complex<double> val;
+//    int Ny = j2-j1,
+//        Nx = k2-k1,
+//        Nz = i2-i1;
+//
+//	ArrayXcd grid(Nx*Ny*Nz);
+//    mat->get_values(grid, k1, k2, j1, j2, i1, i2, sx, sy, sz);
+//
+//    for(int i = 0; i < Nx*Ny*Nz; i++) {
+//        val = grid(i);
+//        arr[i].real = std::real(val);
+//        arr[i].imag = std::imag(val);
+//    }
+//}
+//
+///////////////////////////////////////////////////////////////////////////////////////
+//// ConstantMaterial3D
+///////////////////////////////////////////////////////////////////////////////////////
+//ConstantMaterial3D* ConstantMaterial3D_new(double real, double imag)
+//{
+//    return new ConstantMaterial3D(std::complex<double>(real, imag));
+//}
+//
+//void ConstantMaterial3D_set_material(ConstantMaterial3D* cm, double real, double imag)
+//{
+//    cm->set_material(std::complex<double>(real, imag));
+//}
+//
+//double ConstantMaterial3D_get_material_real(ConstantMaterial3D* cm)
+//{
+//    return std::real(cm->get_material());
+//}
+//
+//double ConstantMaterial3D_get_material_imag(ConstantMaterial3D* cm)
+//{
+//    return std::imag(cm->get_material());
+//}
+//
+///////////////////////////////////////////////////////////////////////////////////////
+//// Structured3DMaterial
+///////////////////////////////////////////////////////////////////////////////////////
+//StructuredMaterial3D* StructuredMaterial3D_new(double X, double Y, double Z,
+//                                               double dx, double dy, double dz)
+//{
+//    return new StructuredMaterial3D(X, Y, Z, dx, dy ,dz);
+//}
+//
+//void StructuredMaterial3D_delete(StructuredMaterial3D* sm)
+//{
+//    delete sm;
+//}
+//
+//void StructuredMaterial3D_add_primitive(StructuredMaterial3D* sm, 
+//                                        MaterialPrimitive* prim, 
+//                                        double z1, double z2)
+//{
+//  sm->add_primitive(prim, z1, z2);  
+//}
 
 /////////////////////////////////////////////////////////////////////////////////////
 // MISC
 /////////////////////////////////////////////////////////////////////////////////////
-void row_wise_A_update(Material2D* eps, Material2D* mu, int ib, int ie, int M, int N,
-                       int x1, int x2, int y1, int y2, complex64* vdiag)
-{
-    int x = 0,
-        y = 0,
-        j = 0,
-        ig = 0,
-        Nc = 3,
-        component = 0;
-
-    std::complex<double> value;
-    std::complex<double> I(0.0, 1.0);
-
-    #pragma omp parallel for private(ig, component, y, x, j)
-    for(int i=ib; i < ie; i++) {
-        ig = i/Nc;
-        component = i-ig*Nc;
-        y = ig/N;
-        x = ig - y*N;
-
-        j = i-ib;
-        if(component == 0) {
-            if(x >= x1 && x < x2 && y >= y1 && y < y2) {
-                value = I*eps->get_value(x,y);
-                vdiag[j].real = std::real(value);
-                vdiag[j].imag = std::imag(value);
-            }
-        }
-        else if(component == 1) {
-            if(x >= x1 && x < x2 && y >= y1 && y < y2) {
-                value = -I*mu->get_value(double(x),double(y)+0.5);
-                vdiag[j].real = std::real(value);
-                vdiag[j].imag = std::imag(value);
-            }
-        }
-        else {
-            if(x >= x1 && x < x2 && y >= y1 && y < y2) {
-                value = -I*mu->get_value(double(x)-0.5,double(y));
-                vdiag[j].real = std::real(value);
-                vdiag[j].imag = std::imag(value);
-            }
-        }
-    }
-}
+//void row_wise_A_update(Material2D* eps, Material2D* mu, int ib, int ie, int M, int N,
+//                       int x1, int x2, int y1, int y2, complex64* vdiag)
+//{
+//    int x = 0,
+//        y = 0,
+//        j = 0,
+//        ig = 0,
+//        Nc = 3,
+//        component = 0;
+//
+//    std::complex<double> value;
+//    std::complex<double> I(0.0, 1.0);
+//
+//    #pragma omp parallel for private(ig, component, y, x, j)
+//    for(int i=ib; i < ie; i++) {
+//        ig = i/Nc;
+//        component = i-ig*Nc;
+//        y = ig/N;
+//        x = ig - y*N;
+//
+//        j = i-ib;
+//        if(component == 0) {
+//            if(x >= x1 && x < x2 && y >= y1 && y < y2) {
+//                value = I*eps->get_value(x,y);
+//                vdiag[j].real = std::real(value);
+//                vdiag[j].imag = std::imag(value);
+//            }
+//        }
+//        else if(component == 1) {
+//            if(x >= x1 && x < x2 && y >= y1 && y < y2) {
+//                value = -I*mu->get_value(double(x),double(y)+0.5);
+//                vdiag[j].real = std::real(value);
+//                vdiag[j].imag = std::imag(value);
+//            }
+//        }
+//        else {
+//            if(x >= x1 && x < x2 && y >= y1 && y < y2) {
+//                value = -I*mu->get_value(double(x)-0.5,double(y));
+//                vdiag[j].real = std::real(value);
+//                vdiag[j].imag = std::imag(value);
+//            }
+//        }
+//    }
+//}

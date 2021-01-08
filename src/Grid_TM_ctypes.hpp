@@ -1,4 +1,4 @@
-#include "Grid.hpp"
+#include "Grid_TM.hpp"
 
 #ifndef __GRID_CTYPES_HPP__
 #define __GRID_CTYPES_HPP__
@@ -16,7 +16,8 @@ extern "C" {
     ////////////////////////////////////////////////////////////////////////////////
 	// Material2D
 	////////////////////////////////////////////////////////////////////////////////
-	void Material2D_get_value(Material2D* mat, complex64* val, double x, double y);
+	//void Material2D_get_value(Material2D* mat, complex64* val, double x, double y);
+	void Material2D_get_value(Material2D* mat, complex64* val, double x, double y, int size);
 
     void Material2D_get_values(Material2D* mat, complex64* arr, int k1, int k2, int j1,
                                int j2, double sx, double sy);
@@ -91,32 +92,32 @@ extern "C" {
     ////////////////////////////////////////////////////////////////////////////////
 	// Material3D
 	////////////////////////////////////////////////////////////////////////////////
-	void Material3D_get_value(Material3D* mat, complex64* val, double x, double y, double z);
-
-    void Material3D_get_values(Material3D* mat, complex64* arr, int k1, int k2,
-                                                                int j1, int j2, 
-                                                                int i1, int i2, 
-                                                                double sx, double sy, double sz);
-
-	////////////////////////////////////////////////////////////////////////////////
-	// ConstantMaterial3D
-	////////////////////////////////////////////////////////////////////////////////
-    ConstantMaterial3D* ConstantMaterial3D_new(double real, double imag);
-    void ConstantMaterial3D_set_material(ConstantMaterial3D* cm, double real, double imag);
-	double ConstantMaterial3D_get_material_real(ConstantMaterial3D* cm);
-	double ConstantMaterial3D_get_material_imag(ConstantMaterial3D* cm);
-
-	////////////////////////////////////////////////////////////////////////////////
-	// Structured3DMaterial
-	////////////////////////////////////////////////////////////////////////////////
-    StructuredMaterial3D* StructuredMaterial3D_new(double X, double Y, double Z, double dx, double dy, double dz);
-	void StructuredMaterial3D_delete(StructuredMaterial3D* sm);
-	void StructuredMaterial3D_add_primitive(StructuredMaterial3D* sm, MaterialPrimitive* prim, double z1, double z2);
-
-    ////////////////////////////////////////////////////////////////////////////////
-    // Misc
-    ////////////////////////////////////////////////////////////////////////////////
-    void row_wise_A_update(Material2D* eps, Material2D* mu, int ib, int ie, int M, int N, int x1, int x2, int y1, int y2, complex64* vdiag);
+//	void Material3D_get_value(Material3D* mat, complex64* val, double x, double y, double z);
+//
+//    void Material3D_get_values(Material3D* mat, complex64* arr, int k1, int k2,
+//                                                                int j1, int j2, 
+//                                                                int i1, int i2, 
+//                                                                double sx, double sy, double sz);
+//
+//	////////////////////////////////////////////////////////////////////////////////
+//	// ConstantMaterial3D
+//	////////////////////////////////////////////////////////////////////////////////
+//    ConstantMaterial3D* ConstantMaterial3D_new(double real, double imag);
+//    void ConstantMaterial3D_set_material(ConstantMaterial3D* cm, double real, double imag);
+//	double ConstantMaterial3D_get_material_real(ConstantMaterial3D* cm);
+//	double ConstantMaterial3D_get_material_imag(ConstantMaterial3D* cm);
+//
+//	////////////////////////////////////////////////////////////////////////////////
+//	// Structured3DMaterial
+//	////////////////////////////////////////////////////////////////////////////////
+//    StructuredMaterial3D* StructuredMaterial3D_new(double X, double Y, double Z, double dx, double dy, double dz);
+//	void StructuredMaterial3D_delete(StructuredMaterial3D* sm);
+//	void StructuredMaterial3D_add_primitive(StructuredMaterial3D* sm, MaterialPrimitive* prim, double z1, double z2);
+//
+//    ////////////////////////////////////////////////////////////////////////////////
+//    // Misc
+//    ////////////////////////////////////////////////////////////////////////////////
+//    void row_wise_A_update(Material2D* eps, Material2D* mu, int ib, int ie, int M, int N, int x1, int x2, int y1, int y2, complex64* vdiag);
 }
 
 #endif

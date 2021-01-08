@@ -24,7 +24,8 @@ c_double_p = ndpointer(np.double, ndim=1, flags='C')
 #####################################################################################
 # Material2D configuration 
 #####################################################################################
-libGrid.Material2D_get_value.argtypes = [c_void_p, c_complex_1D_p, c_double, c_double]
+#libGrid.Material2D_get_value.argtypes = [c_void_p, c_complex_1D_p, c_double, c_double]
+libGrid.Material2D_get_value.argtypes = [c_void_p, c_complex_1D_p, c_double, c_int]
 libGrid.Material2D_get_value.restype = None
 libGrid.Material2D_get_values.argtypes = [c_void_p, c_complex_1D_p, c_int, c_int, c_int,
                                           c_int, c_double, c_double]
@@ -138,43 +139,43 @@ libGrid.ConstantMaterial2D_get_material_imag.restype = None
 #####################################################################################
 # Material3D configuration 
 #####################################################################################
-libGrid.Material3D_get_value.argtypes = [c_void_p, c_complex_1D_p, c_double,
-                                         c_double, c_double]
-libGrid.Material3D_get_value.restype = None
-libGrid.Material3D_get_values.argtypes = [c_void_p, c_complex_1D_p, c_int, c_int, c_int, c_int,
-                                          c_int, c_int, c_double, c_double,
-                                          c_double]
-libGrid.Material3D_get_values.restype = None
-
-####################################################################################
-# ConstantMaterial3D configuration
-####################################################################################
-libGrid.ConstantMaterial3D_new.argtypes = [c_double, c_double]
-libGrid.ConstantMaterial3D_new.restype = c_void_p
-libGrid.ConstantMaterial3D_set_material.argtypes = [c_void_p, c_double, c_double]
-libGrid.ConstantMaterial3D_set_material.restype = None
-libGrid.ConstantMaterial3D_get_material_real.argtypes = [c_void_p]
-libGrid.ConstantMaterial3D_get_material_real.restype = None
-libGrid.ConstantMaterial3D_get_material_imag.argtypes = [c_void_p]
-libGrid.ConstantMaterial3D_get_material_imag.restype = None
-
-####################################################################################
-# StructuredMaterial3D configuration
-####################################################################################
-libGrid.StructuredMaterial3D_new.argtypes = [c_double, c_double, c_double,
-                                             c_double, c_double, c_double]
-libGrid.StructuredMaterial3D_new.restype = c_void_p
-libGrid.StructuredMaterial3D_delete.argtypes = [c_void_p]
-libGrid.StructuredMaterial3D_delete.restype = None
-libGrid.StructuredMaterial3D_add_primitive.argtypes = [c_void_p, c_void_p,
-                                                       c_double, c_double]
-libGrid.StructuredMaterial3D_add_primitive.restype = None
-
-####################################################################################
-# Misc
-####################################################################################
-libGrid.row_wise_A_update.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, \
-                                      c_int, c_int, c_int, c_int, c_complex_1D_p]
-libGrid.row_wise_A_update.restype = None
-
-
+#libGrid.Material3D_get_value.argtypes = [c_void_p, c_complex_1D_p, c_double,
+#                                         c_double, c_double]
+#libGrid.Material3D_get_value.restype = None
+#libGrid.Material3D_get_values.argtypes = [c_void_p, c_complex_1D_p, c_int, c_int, c_int, c_int,
+#                                          c_int, c_int, c_double, c_double,
+#                                          c_double]
+#libGrid.Material3D_get_values.restype = None
+#
+#####################################################################################
+## ConstantMaterial3D configuration
+#####################################################################################
+#libGrid.ConstantMaterial3D_new.argtypes = [c_double, c_double]
+#libGrid.ConstantMaterial3D_new.restype = c_void_p
+#libGrid.ConstantMaterial3D_set_material.argtypes = [c_void_p, c_double, c_double]
+#libGrid.ConstantMaterial3D_set_material.restype = None
+#libGrid.ConstantMaterial3D_get_material_real.argtypes = [c_void_p]
+#libGrid.ConstantMaterial3D_get_material_real.restype = None
+#libGrid.ConstantMaterial3D_get_material_imag.argtypes = [c_void_p]
+#libGrid.ConstantMaterial3D_get_material_imag.restype = None
+#
+#####################################################################################
+## StructuredMaterial3D configuration
+#####################################################################################
+#libGrid.StructuredMaterial3D_new.argtypes = [c_double, c_double, c_double,
+#                                             c_double, c_double, c_double]
+#libGrid.StructuredMaterial3D_new.restype = c_void_p
+#libGrid.StructuredMaterial3D_delete.argtypes = [c_void_p]
+#libGrid.StructuredMaterial3D_delete.restype = None
+#libGrid.StructuredMaterial3D_add_primitive.argtypes = [c_void_p, c_void_p,
+#                                                       c_double, c_double]
+#libGrid.StructuredMaterial3D_add_primitive.restype = None
+#
+#####################################################################################
+## Misc
+#####################################################################################
+#libGrid.row_wise_A_update.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, \
+#                                      c_int, c_int, c_int, c_int, c_complex_1D_p]
+#libGrid.row_wise_A_update.restype = None
+#
+#
