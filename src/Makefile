@@ -19,12 +19,14 @@ CXXFLAGS = -Wall -fopenmp -O3 -march=native -DNDEBUG -std=c++11
 INCLUDES = -I${EIGEN_DIR} -I${BOOST_DIR} -I/usr/include/eigen3
 LDFLAGS = -lpthread
 
-all: Grid.o Grid_ctypes.o FDTD.o FDTD_2D.o FDTD_2D_CYL.o Grid.cpp Grid.hpp Grid_ctypes.cpp Grid_ctypes.hpp fdtd.cpp fdtd.hpp fdtd_2d.cpp fdtd_2d.hpp fdtd_2d_cyl_v2.cpp fdtd_2d_cyl_v2.hpp
+all: Grid.o Grid_ctypes.o Grid_TM.o Grid_ctypes.o FDTD.o FDTD_2D.o FDTD_2D_CYL.o Grid.cpp Grid.hpp Grid_ctypes.cpp Grid_ctypes.hpp Grid_TM.cpp Grid_TM.hpp Grid_TM_ctypes.cpp Grid_TM_ctypes.hpp fdtd.cpp fdtd.hpp fdtd_2d.cpp fdtd_2d.hpp fdtd_2d_cyl_v2.cpp fdtd_2d_cyl_v2.hpp
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o Grid.so Grid.o Grid_ctypes.o ${LDFLAGS}
+	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o Grid_TM.so Grid_TM.o Grid_TM_ctypes.o ${LDFLAGS}
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o FDTD.so FDTD.o ${LDFLAGS}
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o FDTD_2D.so FDTD_2D.o ${LDFLAGS}
 	${CC} ${SHARED_FLAG} -fopenmp -fPIC -o FDTD_2D_CYL.so FDTD_2D_CYL.o ${LDFLAGS}
 	cp Grid.so ../emopt
+	cp Grid_TM.so ../emopt
 	cp FDTD.so ../emopt
 	cp FDTD_2D.so ../emopt
 	cp FDTD_2D_CYL.so ../emopt
@@ -32,8 +34,14 @@ all: Grid.o Grid_ctypes.o FDTD.o FDTD_2D.o FDTD_2D_CYL.o Grid.cpp Grid.hpp Grid_
 Grid.o: Grid.cpp Grid.hpp
 	${CC} -c -fPIC Grid.cpp ${CXXFLAGS} -o Grid.o ${INCLUDES}
 
+Grid_TM.o: Grid_TM.cpp Grid_TM.hpp
+	${CC} -c -fPIC Grid_TM.cpp ${CXXFLAGS} -o Grid_TM.o ${INCLUDES}
+
 Grid_ctypes.o: Grid.cpp Grid.hpp Grid_ctypes.cpp Grid_ctypes.hpp
 	${CC} -c -fPIC Grid_ctypes.cpp ${CXXFLAGS} -o Grid_ctypes.o ${INCLUDES}
+
+Grid_TM_ctypes.o: Grid_TM.cpp Grid_TM.hpp Grid_TM_ctypes.cpp Grid_TM_ctypes.hpp
+	${CC} -c -fPIC Grid_TM_ctypes.cpp ${CXXFLAGS} -o Grid_TM_ctypes.o ${INCLUDES}
 
 FDTD.o: fdtd.cpp fdtd.hpp
 	${CC} -c -fPIC fdtd.cpp ${CXXFLAGS} -o FDTD.o

@@ -1946,6 +1946,600 @@ class FDFD_TM(FDFD_TE):
         vdiag *= -1
         return vdiag
 
+class FDFD_TM_NEW(FDFD_TE):
+    """
+    New class for TM problems that implements special boundary smoothing technique for metals
+    """
+
+    def __init__(self, X, Y, dx, dy, wavelength, solver='auto',
+                 ksp_solver='gmres'):
+        super(FDFD_TM_NEW, self).__init__(X, Y, dx, dy, wavelength, solver=solver,
+              ksp_solver=ksp_solver)
+
+        self.bc = 'MM'
+
+    #@property
+    #def eps(self):
+    #    return self._eps_actual
+
+    #@property
+    #def mu(self):
+    #    return self._mu_actual
+
+    #@property
+    #def bc(self):
+    #    val = self._bc[:]
+    #    for i in range(2):
+    #        if(val[i] == 'E'): val[i] = 'H'
+    #        elif(val[i] == 'H'): val[i] = 'E'
+    #        if(val[i] == '0'): val[i] = 'M'
+    #        elif(val[i] == 'M'): val[i] = '0'
+
+    #    return ''.join(val)
+
+    #@bc.setter
+    #def bc(self, val):
+    #    self._bc = list(val)
+    #    self._built = False
+
+    #    # since TM solver uses TE build() function, we need to swap E and H
+    #    # boundary conditions as well as 0 and M
+    #    for i in range(2):
+    #        if(self._bc[i] == 'E'): self._bc[i] = 'H'
+    #        elif(self._bc[i] == 'H'): self._bc[i] = 'E'
+    #        if(self._bc[i] == '0'): self._bc[i] = 'M'
+    #        elif(self._bc[i] == 'M'): self._bc[i] = '0'
+
+    #    if(val[0] in 'EH' and self._w_pml_left != 0):
+    #        warning_message('Symmetry imposed on right boundary with finite width PML.',
+    #                        'emopt.fdfd')
+
+    #    if(val[1] in 'EH' and self._w_pml_bottom != 0):
+    #        warning_message('Symmetry imposed on bottom boundary with finite width PML.',
+    #                        'emopt.fdfd')
+
+    #    if(val[0] in 'PB' and (self._w_pml_left != 0 or self._w_pml_right !=0)):
+    #        warning_message('Periodicity imposed along x direction with finite width PML.',
+    #                        'emopt.fdfd')
+
+    #    if(val[1] in 'PB' and (self._w_pml_top != 0 or self._w_pml_bottom !=0)):
+    #        warning_message('Periodicity imposed along y direction with finite width PML.',
+    #                        'emopt.fdfd')
+
+    #    for v in val:
+    #        if(v not in '0MEHPB'):
+    #            error_message('Boundary condition type %s unknown. Use 0, M, E, H, '
+    #                          'P, or B.' % (v))
+
+
+    #def set_materials(self, eps, mu):
+    #    """Set the material distributions of the system to be simulated.
+
+    #    Parameters
+    #    ----------
+    #    eps : emopt.grid.Material
+    #        The spatially-dependent permittivity of the system
+    #    mu : emopt.grid.Material
+    #        The spatially-dependent permeability of the system
+    #    """
+    #    # swap mu and eps to go from TE to TM
+    #    super(FDFD_TM, self).set_materials(mu, eps)
+
+    #    self._eps_actual = eps
+    #    self._mu_actual = mu
+
+    def set_sources(self, src, src_domain=None, mindex=0):
+        """Set the sources of the system used in the forward solve.
+
+        The sources can be defined either using three numpy arrays or using a
+        mode source. When using a mode source, the corresponding current
+        density arrays will be automatically generated and extracted.
+
+        Notes
+        -----
+        Like the underlying fields, the current sources are represented on a
+        set of shifted grids.  In particular, :math:`M_z`'s are all located at
+        the center of a grid cell, the :math:`J_x`'s are shifted in the
+        positive y direction by half a grid cell, and the :math:`J_y`'s are
+        shifted in the negative x direction by half of a grid cell.  It is
+        important to take this into account when defining the current sources.
+
+        Todo
+        ----
+        1. Implement a more user-friendly version of these sources (so that you do
+        not need to deal with the Yee cell implementation).
+
+        2. Implement this in a better parallelized way
+
+        Parameters
+        ----------
+        src : tuple of numpy.ndarray or modes.ModeTM
+            (Option 1) The current sources in the form (Mz, Jx, Jy).  Each array in the
+            tuple should be a 2D numpy.ndarry with dimensions MxN.
+            (Option 2), a mode source which has been built and solved.
+        src_domain : emopt.misc.DomainCoordinates (optional)
+            Specifies the location of the provided current source distribution
+            or mode source. If None, it is assumed that source arrays have been
+            provided and those source arrays span the whole simulation region
+            (i.e. have size MxN)
+        mindx : int (optional)
+            Specifies the index of the mode source (only used if a mode source
+            is passed in as src)
+        """
+        if(isinstance(src, modes.ModeTM)):
+            msrc = src.get_source(mindex, self._dx, self._dy)
+
+            Mz = msrc[0]
+            Jx = msrc[1]
+            Jy = msrc[2]
+        else:
+            Mz = src[0]
+            Jx = src[1]
+            Jy = src[2]
+        # In order to properly make use of the TE subclass, we need to flip the
+        # sign of Jx and Jy
+        super(FDFD_TM_NEW, self).set_sources((Mz, Jx, Jy),
+                                              src_domain, mindex)
+
+    #def set_adjoint_sources(self, src):
+    #    """Set the sources of the system used in the adjoint solve.
+
+    #    The details of these sources are identical to the forward solution
+    #    current sources.
+
+    #    Parameters
+    #    ----------
+    #    src : tuple of numpy.ndarray
+    #        The current sources in the form (Mz_adj, Jx_adj, Jy_adj).  Each array 
+    #        in the tiple should be a 2D numpy.ndarry with dimensions MxN.
+    #    """
+    #    # In order to properly make use of the TE subclass, we need to flip the
+    #    # sign of Jx_adj and Jy_adj
+    #    super(FDFD_TM, self).set_adjoint_sources((src[0], -1*src[1], -1*src[2]))
+
+    def build(self):
+        """(Re)Build the system matrix.
+
+        Maxwell's equations are solved by compiling them into a linear system
+        of the form :math:`Ax=b`. Here, we build up the structure of A which contains
+        the curl operators, mateiral parameters, and boundary conditions.
+
+        This function must be called at least once after the material
+        distributions of the system have been defined (through a call to
+        :func:`set_materials`).
+
+        Notes
+        -----
+        1. In the current Yee cell configuration, the :math:`H_z`'s are
+        positioned at the center of the cell, the :math:`E_x`'s are shifted in
+        the positive y direction by half of a grid cell, and the :math:`E_y`'s
+        are shifted in the negative x direction by half a grid cell.
+
+        2. This function can be rather slow for larger problems.  In general,
+        callin this function more than once should be avoided.  Instead, the
+        :func:`update` function should be sufficient when only the material
+        distributions of the system have been modified
+
+        3. The current PML implementation is not likely ideal. Nonetheless, it
+        seems to work ok.
+
+        Raises
+        ------
+        Exception
+            If the material distributions of the simulation have not been set
+            prior to calling this function.
+        """
+        #super(FDFD_TM, self).build()
+        A = self._A
+        M = self._M
+        N = self._N
+        eps = self._eps
+        mu = self._mu
+        bc = self._bc
+
+        odx = self._R / self._dx
+        ody = self._R / self._dy
+
+        pml_x_Hz, pml_x_Ey = self.__get_pml_x()
+        pml_y_Hz, pml_y_Ex = self.__get_pml_y()
+
+        odx_Hz = odx * pml_x_Hz
+        odx_Ey = odx * pml_x_Ey
+        ody_Hz = ody * pml_y_Hz
+        ody_Ex = ody * pml_y_Ex
+        Nc = self.Nc
+
+        if(self._eps == None or self._mu == None):
+            raise Exception('The material distributions of the system must be \
+                            initialized prior to building the system matrix.')
+
+        if(self.verbose and NOT_PARALLEL):
+            info_message('Building system matrix...')
+
+        for i in range(self.ib, self.ie):
+
+            ig = int(i/Nc)
+            component = int(i - Nc*ig)
+            y = int(ig/N)
+            x = ig - y*N
+
+            if(component == 0): # Mz row
+                # relevant j coordinates
+                jHz = ig*Nc
+                jEx1 = ig*Nc + 1
+                jEx0 = (ig-N)*Nc + 1
+                jEy0 = ig*Nc + 2
+                jEy1 = (ig+1)*Nc + 2
+
+                #j1 = i+1
+                #j2 = (y-1)*N + x
+
+                # Diagonal element is the permittivity at (x,y)
+                A[i,jHz] = -1j * mu.get_value(x,y)
+
+                A[i,jEx1] = -ody_Hz[y,x]
+                A[i,jEy0] = -odx_Hz[y,x]
+
+                if(y > 0):
+                    A[i,jEx0] = ody_Hz[y,x]
+
+                if(x < N-1):
+                    A[i,jEy1] = odx_Hz[y,x]
+
+                #############################
+                # enforce boundary conditions
+                #############################
+                if(y == 0):
+                    if(bc[1] == '0'):
+                        A[i,jEy0] = 0
+                        if(x < N-1): A[i,jEy1] = 0
+                    elif(bc[1] == 'E'):
+                        A[i,jEx1] = -2*ody_Hz[y,x]
+                    elif(bc[1] == 'H'):
+                        A[i,jEx1] = 0
+                    elif(bc[1] == 'P'):
+                        jEx2 = (x + (M-1)*N)*Nc+1
+                        A[i,jEx2] = ody_Hz[y,x]
+
+                elif(y == M-1):
+                    if(bc[1] == 'M'):
+                        A[i,jEx1] = 0
+
+                if(x == N-1):
+                    if(bc[0] == '0'):
+                        A[i,jEx1] = 0
+                        if(y > 0): A[i,jEx0] = 0
+                    elif(bc[0] == 'P'):
+                        jEy2 = (ig-N-1)*Nc + 2
+                        A[i,jEy2] = odx_Hz[y,x]
+                elif(x == 0):
+                    if(bc[0] == 'M'):
+                        A[i,jEy0] = 0
+
+            elif(component == 1): # Jx row
+                # relevant j coordinates
+                jEx = ig*Nc + 1
+                #jEy = ig*Nc + 2
+                jHz0 = ig*Nc
+                jHz1 = (ig+N)*Nc
+
+                j0 = i
+                j1 = (y+1)*N + x + M*N
+
+                # diagonal element is permeability at (x,y)
+                # if(simple_mu): A[i, j0] = -1j
+                eps_xx, _, eps_yx, _ = eps.get_value(x,y+0.5)
+                A[i,jEx] = 1j * (eps_xx + eps_yx)
+
+                A[i, jHz0] = -ody_Ex[y,x]
+
+                if(y < M-1):
+                    A[i,jHz1] = ody_Ex[y,x]
+
+                #############################
+                # enforce boundary conditions
+                #############################
+                if(y == 0):
+                    if(bc[1] == '0'):
+                        A[i,jHz0] = 0
+                elif(y == M-1):
+                    if(bc[1] == 'P'):
+                        jHz2 = x*Nc
+                        A[i,jHz2] = ody_Hx[y,x]
+                    if(bc[1] == 'M'):
+                        A[i, jEz0] = 0.0
+
+                if(x == N-1):
+                    if(bc[0] == '0'):
+                        A[i,jEz0] = 0
+                        if(y < M-1): A[i,jEz1] = 0
+                elif(x == 0):
+                    pass
+
+            else: # Jy row
+                # relevant j coordinates
+                jEy = ig*Nc + 2
+                jHz0 = (ig-1)*Nc
+                jHz1 = ig*Nc
+
+                j0 = i
+                j1 = i-1
+
+                # diagonal is permeability at (x,y)
+                __, eps_xy, _, eps_yy = eps.get_value(x-0.5,y)
+                A[i,jEy] = 1j * (eps_xy + eps_yy)
+
+                A[i,jHz1] = -odx_Ey[y,x]
+
+                if(x > 0):
+                    A[i,jHz0] = odx_Ey[y,x]
+
+                #############################
+                # enforce boundary conditions
+                #############################
+                if(y == 0):
+                    if(bc[1] == '0'):
+                        A[i,jHz1] = 0
+                        if(x > 0): A[i,jHz0] = 0
+                elif(y == M-1):
+                    pass
+
+                if(x == N-1):
+                    if(bc[0] == '0'):
+                        A[i,jHz1] = 0
+                elif(x == 0):
+                    if(bc[0] == 'E'):
+                        A[i,jHz1] = 0
+                    elif(bc[0] == 'H'):
+                        A[i,jHz1] = -2*odx_Ey[y,x]
+                    elif(bc[0] == 'P'):
+                        jHz2 = (ig + N-1)*Nc
+                        A[i,jHz2] = odx_Ey[y,x]
+
+        # communicate off-processor values and setup internal data structures for
+        # performing parallel operations
+        A.assemblyBegin()
+        A.assemblyEnd()
+
+        self._built = True
+
+
+    def get_field(self, component, domain=None):
+        """Get the desired (forward) field component.
+
+        This function returns the RAW field which is defined on the dislocated
+        grids.  In most situations, the :func:`get_field_interp` function
+        should be prefered.
+
+        Notes
+        -----
+        This function only returns a non-empty field on the master node.
+
+        Parameters
+        ----------
+        component : str
+            The desired field component to be retrieved (either 'Hz', 'Ex', or
+            'Ey')
+        domain : emopt.misc.DomainCoordinates
+            The domain in which the field is retrieved
+
+        Raises
+        ------
+        ValueError
+            If the supplied component is not 'Hz', 'Ex', or 'Ey'
+
+        Returns
+        -------
+        numpy.ndarray
+            (Master node only) A 2D numpy.ndarray containing the desired field
+            component
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDFD_TM_NEW, self).get_field(te_comp, domain)
+
+        #if(component == 'Hz'):
+        #    return -1 * field
+        #else:
+        #    return field
+        return field
+
+    def get_field_interp(self, component, domain=None):
+        """Get the desired (forward) interpolated field.
+
+        When solving Maxwell's equations on a rectangular grid, we actually set
+        up a set of dislocated grids in which the electric and magnetic field
+        components are computed at slightly different positions in space.  As
+        as result, it is often convenient or even necessary to interpolate the
+        fields such that they are all known at the same points in space.  This
+        is particularly important when computing power-related quantities.
+
+        For the sake of simplicity, a simple linear interpolation scheme is
+        used to compute Ex and Ey at the position of Hz.  Hz is the same as the
+        uninterpolated Hz field.
+
+        Parameters
+        ----------
+        component : str
+            The desired field component to be retrieved (either 'Hz', 'Ex', or
+            'Ey')
+        domain : emopt.misc.DomainCoordinates
+            The domain in which the field is retrieved
+
+        Raises
+        ------
+        ValueError
+            If the supplied component is not 'Hz', 'Ex', or 'Ey'
+
+        Returns
+        -------
+        numpy.ndarray
+            (Master node only) A 2D numpy.ndarray containing the desired field
+            component
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDFD_TM_NEW, self).get_field_interp(te_comp, domain)
+
+        #if(component == 'Hz'):
+        #    return -1 * field
+        #else:
+        return field
+
+
+    def get_adjoint_field(self, component, domain=None):
+        """Get the desired raw adjoint field component.
+
+        Notes
+        -----
+        this function only returns a non-empty field on the master node.
+
+        Parameters
+        ----------
+        component : str
+            The desired field component to be retrieved (either 'Hz', 'Ex', or
+            'Ey')
+        domain : emopt.misc.DomainCoordinates
+            The domain in which the field is retrieved
+
+        Raises
+        ------
+        ValueError
+            If the supplied component is not 'Hz', 'Ex', or 'Ey'
+
+        Returns
+        -------
+        numpy.ndarray
+            (Master node only) A numpy.ndarray containing the desired field component
+        """
+        te_comp = ''
+        if(component == 'Hz'): te_comp = 'Ez'
+        elif(component == 'Ex'): te_comp = 'Hx'
+        elif(component == 'Ey'): te_comp = 'Hy'
+        else: te_comp = component
+
+        field = super(FDFD_TM_NEW, self).get_adjoint_field(te_comp, domain)
+
+        #if(component == 'Hz'):
+        #    return -1 * field
+        #else:
+        return field
+
+    def update_saved_fields(self):
+        # collect data on the field domains
+        del self._saved_fields
+        self._saved_fields = []
+        for d in self._field_domains:
+            Hz = self.get_field_interp('Hz', d)
+            Ex = self.get_field_interp('Ex', d)
+            Ey = self.get_field_interp('Ey', d)
+            self._saved_fields.append((Hz, Ex, Ey))
+
+    def get_source_power(self):
+        """Get the source power.
+
+        Notes
+        -----
+        1. The source power is computed using the interpolated fields.
+
+        Returns
+        -------
+        float
+            Electromagnetic power generated by source.
+        """
+        # easier access to PML widths
+        w_pml_l = self._w_pml_left
+        w_pml_r = self._w_pml_right
+        w_pml_t = self._w_pml_top
+        w_pml_b = self._w_pml_bottom
+
+        M = self._M
+        N = self._N
+        dx = self._dx
+        dy = self._dy
+
+        Hz = self.get_field_interp('Hz')
+        Ex = self.get_field_interp('Ex')
+        Ey = self.get_field_interp('Ey')
+
+        if(RANK != 0):
+            return MathDummy()
+
+        # calculate the Poynting vectors around the boundaries of the sytem
+        # (excluding the PML regions)
+        Sx = 0.5*(Ey*np.conj(Hz)).real
+        Sy = -0.5*(Ex*np.conj(Hz)).real
+
+        S1 = -Sy[w_pml_b, w_pml_l:N-1-w_pml_r]
+        S2 = Sy[M-1-w_pml_t, w_pml_l:N-1-w_pml_r]
+        S3 = -Sx[w_pml_b:M-1-w_pml_t, w_pml_l]
+        S4 = Sx[w_pml_b:M-1-w_pml_t, N-1-w_pml_r]
+
+        # total power flowing our of boundaries
+        P_S = np.sum(S1 + S2) * dx + np.sum(S3 + S4) * dy
+
+        x_all = np.arange(w_pml_l, N-w_pml_r)
+        y_all = np.arange(w_pml_b, M-w_pml_t)
+        y_all = y_all.reshape(y_all.shape[0], 1).astype(np.int)
+
+        if(not self.real_materials):
+            eps = self._eps_actual.get_values(0, N, 0, M)
+            mu = self._mu_actual.get_values(0, N, 0, M)
+        else:
+            eps = np.zeros(Hz.shape, dtype=np.complex128)
+            mu = np.zeros(Hz.shape, dtype=np.complex128)
+
+        # power dissipated due to material absorption
+        Hz2 = Hz[y_all, x_all]*np.conj(Hz[y_all, x_all])
+        Ex2 = Ex[y_all, x_all]*np.conj(Ex[y_all, x_all])
+        Ey2 = Ey[y_all, x_all]*np.conj(Ey[y_all, x_all])
+
+        P_loss = 0.25 * dx * dy * np.sum(eps[y_all, x_all].imag*(Ex2 + Ey2) + \
+                                         mu[y_all, x_all].imag*Hz2).real
+        return P_S + P_loss
+
+    #def get_A_diag(self, vdiag=None):
+    #    """Get the diagonal entries of the system matrix A.
+
+    #    Parameters
+    #    ----------
+    #    vdiag : petsc4py.PETSc.Vec
+    #        Vector with dimensions Mx1 where M is equal to the number of
+    #        diagonal entries in A.
+
+    #    Returns
+    #    -------
+    #    **(Master node only)** the diagonal entries of A.
+    #    """
+    #    # We need to override this function since the TE matrix diagonals do
+    #    # not match the TM matrix diagonals (even when swapping eps and mu).
+    #    # This is because the signs on epsilon and mu in Maxwell's equations
+    #    # are flipped when moving from TE to TM.  In most cases, it is easiest
+    #    # to handle this change by swapping Ez with -Hz, Mx with -Jx, and My
+    #    # with -Jy in the TE equations, which can be achieved by simply
+    #    # overriding the corresponding setter and getter functions.  In
+    #    # reality, a better way to handle reusing the TE equations is to swap E
+    #    # and H, J and M, eps with -mu, and mu with -eps.  This way of doing
+    #    # things, however, is harder to achieve programmatically if we want to
+    #    # reuse as much of the TE code as possible.  When using the FDFD object
+    #    # with an AdjointMethod, it turns out that simply swapping field and
+    #    # source components is insufficient and knowledge of the A's diagonals
+    #    # is needed, hence this overriden function.
+    #    if(vdiag == None):
+    #        vdiag = PETSc.Vec()
+    #    self._A.getDiagonal(vdiag)
+
+    #    vdiag *= -1
+    #    return vdiag
+
 class FDFD_3D(FDFD):
     """Simulate Maxwell's equations in 3D.
 
